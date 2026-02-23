@@ -52,3 +52,4 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get("*",(req,res)=>{if(!req.path.startsWith("/api")&&!req.path.startsWith("/health")&&!req.path.startsWith("/webhook")){res.sendFile(path.join(__dirname,"public","index.html"))}});
 
 app.listen(PORT,()=>{console.log(`\n  EFIX Securitizadora — v1.0\n  http://localhost:${PORT}\n  API + Frontend on same server\n  Mode: TEST\n`)});
+// v2 deploy

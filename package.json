@@ -1,0 +1,15 @@
+{
+  "name": "efix-securitizadora",
+  "version": "1.0.0",
+  "description": "EFIX Securitizadora — Sistema de Antecipação de Recebíveis",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

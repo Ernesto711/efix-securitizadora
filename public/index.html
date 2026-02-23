@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EFIX Securitizadora</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:#FAFBFD;color:#111827}
+input,select,button{font-family:inherit}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+.mono{font-family:'JetBrains Mono',monospace}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.10/babel.min.js"></script>
+<script type="text/babel">
+const {useState,useEffect,useCallback} = React;
+
+const KEY="efixdi-admin-2026";
+const EFIX_LOGO="/efix-logo.png";
+const api={
+  get:async(p)=>{try{const r=await fetch(p);return r.json()}catch{return null}},
+  post:async(p,b)=>{try{const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});return r.json()}catch{return null}},
+};
+
+// ─── Data ───
+const CONTRACTS={
+  efixDI:{addr:"0x04082b283818D9d0dd9Ee8742892eEe5CC396441",name:"EfixDI Token",chain:"Polygon",url:"https://polygonscan.com/address/0x04082b283818D9d0dd9Ee8742892eEe5CC396441"},
+  vault:{addr:"0x2eA512b4C5e53A8c1302AC8ba2d43c5DA90b307C",name:"EfixVault V2",chain:"Polygon",url:"https://polygonscan.com/address/0x2eA512b4C5e53A8c1302AC8ba2d43c5DA90b307C"},
+  pixBridge:{addr:"0x1d97f1adbf545F3C99d33A6a2166Ee423A78f4C3",name:"PIX Bridge",chain:"Polygon",url:"https://polygonscan.com/address/0x1d97f1adbf545F3C99d33A6a2166Ee423A78f4C3"},
+  oracle:{addr:"0xD9d24596DDAbB1CcE603D4d8AD04A97c1836Ae94",name:"BRL Oracle",chain:"Polygon",url:"https://polygonscan.com/address/0xD9d24596DDAbB1CcE603D4d8AD04A97c1836Ae94"},
+  brthSwap:{addr:"0xfBfC7D9E1d6F1524eDFE0afCD644789ed4158800",name:"BRTH Swap",chain:"Polygon",url:"https://polygonscan.com/address/0xfBfC7D9E1d6F1524eDFE0afCD644789ed4158800"},
+  baseToken:{addr:"0xF5cA55f3ea5Bcd180aEa6dF9E05a0E63A66f5608",name:"EfixDI (Base)",chain:"Base",url:"https://basescan.org/address/0xF5cA55f3ea5Bcd180aEa6dF9E05a0E63A66f5608"},
+  morpho:{addr:"0x5A611498C96C3871d0bA131f207e5E05c713A06A",name:"Morpho Vault V2",chain:"Base",url:"https://basescan.org/address/0x5A611498C96C3871d0bA131f207e5E05c713A06A"},
+  baseOracle:{addr:"0xF4e20ff5a1a3B6251b2c460c6b221a52bED85aA9",name:"Oracle V1",chain:"Base",url:"https://basescan.org/address/0xF4e20ff5a1a3B6251b2c460c6b221a52bED85aA9"},
+};
+
+const initRecebiveis=[
+  {id:"REC-001",cedente:"Siderquímica Ltda",sacado:"Vale S.A.",valor:450000,venc:"15/04/2026",status:"ativo",tipo:"CR",tx:"0x7a3f...e821",risco:"A"},
+  {id:"REC-002",cedente:"Siderquímica Ltda",sacado:"CSN S.A.",valor:280000,venc:"22/05/2026",status:"pendente",tipo:"CR",tx:null,risco:"A"},
+  {id:"REC-003",cedente:"Empresa Alpha",sacado:"Petrobras S.A.",valor:1200000,venc:"10/03/2026",status:"ativo",tipo:"cessão",tx:"0x9b2c...f443",risco:"AA"},
+  {id:"REC-004",cedente:"Beta Ind. Com.",sacado:"Ambev S.A.",valor:670000,venc:"30/06/2026",status:"liquidado",tipo:"cessão",tx:"0x4d1e...a902",risco:"A"},
+  {id:"REC-005",cedente:"Gamma Tech",sacado:"Embraer S.A.",valor:890000,venc:"18/07/2026",status:"ativo",tipo:"CR",tx:"0x1f5a...b731",risco:"B"},
+];
+
+const initPropostas=[
+  {id:"PRP-001",cedente:"Siderquímica Ltda",valor:730000,op:"CR",status:"aprovada",data:"10/02/2026",prazo:"D+30"},
+  {id:"PRP-002",cedente:"Empresa Alpha",valor:1200000,op:"Cessão",status:"em análise",data:"18/02/2026",prazo:"D+3"},
+  {id:"PRP-003",cedente:"Beta Ind. Com.",valor:670000,op:"Cessão",status:"aprovada",data:"05/02/2026",prazo:"D+3"},
+  {id:"PRP-004",cedente:"Gamma Tech",valor:890000,op:"CR",status:"pendente",data:"20/02/2026",prazo:"D+30"},
+];
+
+const initUsuarios=[
+  {id:"USR-001",nome:"Siderquímica Ltda",tipo:"cedente",doc:"12.345.678/0001-90",wallet:"0x742d...F3a1",email:"contato@siderquimica.com.br",status:"ativo"},
+  {id:"USR-002",nome:"Empresa Alpha",tipo:"cedente",doc:"23.456.789/0001-01",wallet:"0x9B3e...D4c2",email:"fin@alpha.com.br",status:"ativo"},
+  {id:"USR-003",nome:"Investidor A",tipo:"investidor",doc:"***.***.***-12",wallet:"0x1A5f...E8b3",email:"inv.a@email.com",status:"ativo"},
+  {id:"USR-004",nome:"Ernesto Otero",tipo:"admin",doc:"ernesto.otero@hausbank.com.br",wallet:"0x7C54...7537",email:"ernesto.otero@hausbank.com.br",status:"ativo"},
+  {id:"USR-005",nome:"Vale S.A.",tipo:"sacado",doc:"33.592.510/0001-54",wallet:null,email:"ap@vale.com",status:"ativo"},
+];
+
+const fBRL=v=>"R$ "+Number(v).toLocaleString("pt-BR");
+
+// ─── Components ───
+const c={accent:"#6366F1",green:"#059669",purple:"#7C3AED",amber:"#D97706",blue:"#2563EB",red:"#DC2626",bg:"#F4F6FA",border:"#E8ECF2",dim:"#9CA3AF",sec:"#4B5563"};
+
+const Badge=({children,color=c.green})=>React.createElement("span",{style:{display:"inline-block",padding:"2px 8px",borderRadius:5,fontSize:10,fontWeight:600,color,background:color+"14",letterSpacing:"0.04em",textTransform:"uppercase"}},children);
+
+const Btn=({children,onClick,primary,small,disabled,color,style:st})=>React.createElement("button",{onClick,disabled,style:{padding:small?"5px 12px":"9px 18px",fontSize:small?12:13,borderRadius:8,border:primary?"none":"1px solid #E8ECF2",background:primary?(color||c.accent):"#fff",color:primary?"#fff":"#4B5563",fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.5:1,display:"inline-flex",alignItems:"center",gap:6,...st}},children);
+
+const Card=({children,style:st})=>React.createElement("div",{style:{background:"#fff",border:"1px solid #E8ECF2",borderRadius:14,padding:22,boxShadow:"0 1px 3px rgba(0,0,0,0.04)",marginBottom:14,...st}},children);
+
+const Input=({label,value,onChange,placeholder,prefix,suffix,type,readOnly,style:st})=>React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4,...st}},
+  label&&React.createElement("label",{style:{fontSize:10,fontWeight:600,color:c.dim,letterSpacing:"0.06em",textTransform:"uppercase"}},label),
+  React.createElement("div",{style:{position:"relative"}},
+    prefix&&React.createElement("span",{style:{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:c.dim,fontSize:13,fontFamily:"'JetBrains Mono',monospace"}},prefix),
+    React.createElement("input",{type:type||"text",value,onChange:e=>onChange?.(e.target.value),placeholder,readOnly,style:{width:"100%",padding:prefix?"8px 10px 8px 36px":"8px 10px",paddingRight:suffix?50:10,background:readOnly?c.bg:"#fff",border:"1px solid #E8ECF2",borderRadius:8,color:"#111827",fontSize:13,fontFamily:"'JetBrains Mono',monospace",outline:"none",boxSizing:"border-box"}}),
+    suffix&&React.createElement("span",{style:{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:c.dim,fontSize:10,fontFamily:"'JetBrains Mono',monospace"}},suffix)
+  )
+);
+
+const Sel=({label,value,onChange,options,style:st})=>React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4,...st}},
+  label&&React.createElement("label",{style:{fontSize:10,fontWeight:600,color:c.dim,letterSpacing:"0.06em",textTransform:"uppercase"}},label),
+  React.createElement("select",{value,onChange:e=>onChange(e.target.value),style:{width:"100%",padding:"8px 10px",background:"#fff",border:"1px solid #E8ECF2",borderRadius:8,color:"#111827",fontSize:13,outline:"none",cursor:"pointer"}},
+    options.map(o=>React.createElement("option",{key:o.value,value:o.value},o.label))
+  )
+);
+
+const TH=({children})=>React.createElement("th",{style:{textAlign:"left",padding:"10px 12px",fontSize:10,fontWeight:600,color:c.dim,letterSpacing:"0.08em",textTransform:"uppercase",borderBottom:"1px solid #E8ECF2",background:c.bg}},children);
+const TD=({children,mono,color,style:st})=>React.createElement("td",{style:{padding:"10px 12px",fontSize:13,borderBottom:"1px solid #F0F2F7",color:color||"#111827",fontFamily:mono?"'JetBrains Mono',monospace":"inherit",...st}},children);
+
+// ═══════════════════════════════════════════════════════════════
+// PAGES
+// ═══════════════════════════════════════════════════════════════
+
+function Dashboard({live,go}){
+  const p=live?.protocol;
+  const sv=live?.health?.services;
+  const totalAtivo=initRecebiveis.filter(r=>r.status==="ativo").reduce((s,r)=>s+r.valor,0);
+
+  return React.createElement("div",null,
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
+      React.createElement("div",null,
+        React.createElement("h2",{style:{fontSize:20,fontWeight:700}},"Painel de Controle"),
+        React.createElement("p",{style:{fontSize:13,color:c.dim,marginTop:4}},"Efix Securitizadora S.A. · eFIX DI+ Protocol")
+      ),
+      React.createElement("div",{style:{display:"flex",gap:8}},
+        React.createElement(Btn,{small:true,onClick:()=>go("cadastros")},"+ Novo Cadastro"),
+        React.createElement(Btn,{primary:true,onClick:()=>go("propostas")},"+ Nova Operação")
+      )
+    ),
+    // Stats
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}},
+      [{label:"TVL (PROTOCOL)",value:p?`R$ ${Math.floor(Number(p.tvl_brl)).toLocaleString("pt-BR")}`:"...",sub:p?`$${Number(p.tvl_usd).toLocaleString("en")} USD`:"",cl:c.accent},
+       {label:"EFIXDI SUPPLY",value:p?Math.floor(Number(p.efix_total_supply)).toLocaleString("pt-BR"):"...",sub:p?`Bloco #${p.current_block?.toLocaleString()}`:"",cl:c.purple},
+       {label:"BRL/USD",value:p?`$${p.brl_usd_rate}`:"...",sub:"Chainlink Oracle",cl:"#0891B2"},
+       {label:"CARTEIRA ATIVA",value:fBRL(totalAtivo),sub:"3 recebíveis on-chain",cl:c.green}
+      ].map((x,i)=>React.createElement(Card,{key:i,style:{marginBottom:0,position:"relative"}},
+        React.createElement("div",{style:{position:"absolute",top:0,left:22,right:22,height:2,borderRadius:2,background:`linear-gradient(90deg,${x.cl},transparent)`,opacity:.5}}),
+        React.createElement("div",{style:{fontSize:10,color:c.dim,letterSpacing:"0.08em",marginBottom:8}},x.label),
+        React.createElement("div",{className:"mono",style:{fontSize:24,fontWeight:700,letterSpacing:"-0.02em"}},x.value),
+        x.sub&&React.createElement("div",{style:{fontSize:12,color:c.sec,marginTop:4}},x.sub)
+      ))
+    ),
+    // Services
+    sv&&React.createElement(Card,{style:{background:c.bg,border:"1px solid #F0F2F7"}},
+      React.createElement("div",{style:{fontSize:10,fontWeight:600,color:c.dim,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:10}},"SERVIÇOS BACKEND (LIVE)"),
+      React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:14}},
+        Object.entries(sv).map(([k,v])=>React.createElement("span",{key:k,style:{fontSize:12,color:c.sec,display:"flex",alignItems:"center",gap:5}},
+          React.createElement("span",{style:{width:6,height:6,borderRadius:"50%",background:["connected","authenticated","active","polling","listening"].includes(v)?c.green:v==="idle"?"#9CA3AF":c.amber}}),
+          React.createElement("span",{className:"mono"},k+":"),` ${v}`
+        ))
+      )
+    ),
+    // Flows
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
+      [{title:"Operação Siderquímica",badge:"CR · IR REGRESSIVO",cl:c.green,steps:["Cedente cede crédito → Securitizadora (até 30d)","Afetação patrimonial do crédito","Emissão do CR com lastro on-chain","Investidor compra CR (c/ ágio)","Pagamento ao cedente via iHold PIX","Devedores pagam nos vencimentos","Repasse c/ retenção IR regressiva","Informe de rendimentos anual"]},
+       {title:"Operação Mercado",badge:"CESSÃO · GANHO CAPITAL",cl:c.purple,steps:["Cedente cede crédito → Securitizadora (até 3d)","Cessão c/ ágio → Investidor","Pagamento ao cedente via iHold PIX","Devedores pagam ou cedente repassa","Repasse integral ao investidor","Informe mensal + GCAP ao investidor"]}
+      ].map((op,idx)=>React.createElement(Card,{key:idx},
+        React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+          React.createElement("h3",{style:{fontSize:14,fontWeight:700}},op.title),
+          React.createElement(Badge,{color:op.cl},op.badge)
+        ),
+        op.steps.map((step,i)=>React.createElement("div",{key:i,style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0"}},
+          React.createElement("div",{className:"mono",style:{width:20,height:20,borderRadius:5,background:op.cl+"12",color:op.cl,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,flexShrink:0}},i+1),
+          React.createElement("span",{style:{fontSize:12,color:c.sec}},step)
+        ))
+      ))
+    )
+  );
+}
+
+function Propostas(){
+  const [list,setList]=useState(initPropostas);
+  const [show,setShow]=useState(false);
+  const blank={cedente:"",cpfCnpjCedente:"",emailCedente:"",sacado:"",cpfCnpjSacado:"",empreendimento:"",creditoDesc:"Comissão de intermediação imobiliária",op:"CR",coobrigacao:"sem",valorBruto:"",txDesconto:"5.00",royalty:"1.00",numParcelas:"1",vencimento:"",prazo:"30",formaPgto:"pix"};
+  const [f,setF]=useState(blank);
+  const up=(k,v)=>setF(s=>({...s,[k]:v}));
+
+  // Cálculos automáticos
+  const vb=Number(f.valorBruto)||0;
+  const desc=vb*(Number(f.txDesconto)||0)/100;
+  const roy=vb*(Number(f.royalty)||0)/100;
+  const vliq=Math.max(0,vb-desc-roy);
+  const cet=vb>0?((desc+roy)/vb*100):0;
+  const nparc=Math.max(1,parseInt(f.numParcelas)||1);
+  const vparc=vb/nparc;
+
+  const add=()=>{
+    if(!f.cedente||!f.valorBruto||!f.sacado)return;
+    const nova={id:`PRP-${String(list.length+1).padStart(3,"0")}`,cedente:f.cedente,valor:vb,op:f.op,status:"pendente",data:new Date().toLocaleDateString("pt-BR"),prazo:`D+${f.prazo}`,vliq,sacado:f.sacado,empreendimento:f.empreendimento};
+    setList([nova,...list]);
+    setF(blank);
+    setShow(false);
+  };
+
+  const Sec=({title,children})=>React.createElement("div",{style:{marginBottom:16}},
+    React.createElement("div",{style:{fontSize:11,fontWeight:700,color:c.accent,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:10,paddingBottom:6,borderBottom:`1px solid ${c.accent}20`}},title),
+    children
+  );
+
+  const RoLine=({label,value,bold,green})=>React.createElement("div",{style:{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:13,fontWeight:bold?700:400,color:green?c.green:bold?"#111827":c.sec}},
+    React.createElement("span",null,label),
+    React.createElement("span",{className:"mono"},value)
+  );
+
+  return React.createElement("div",null,
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}},
+      React.createElement("div",null,
+        React.createElement("h2",{style:{fontSize:20,fontWeight:700}},"Gestão de Operações"),
+        React.createElement("p",{style:{fontSize:13,color:c.dim,marginTop:4}},"Cessão de direitos creditórios · Lei 14.430/22 · CVM 88")
+      ),
+      React.createElement(Btn,{primary:true,onClick:()=>setShow(!show)},show?"✕ Fechar":"+ Nova Cessão")
+    ),
+    // Form completo
+    show&&React.createElement(Card,{style:{border:`1px solid ${c.accent}30`,marginBottom:14}},
+      React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:18}},
+        React.createElement("img",{src:EFIX_LOGO,style:{width:28,height:28,borderRadius:6}}),
+        React.createElement("div",null,
+          React.createElement("h3",{style:{fontSize:15,fontWeight:700,margin:0}},"Contrato de Cessão de Direitos Creditórios"),
+          React.createElement("p",{style:{fontSize:11,color:c.dim,margin:0}},"EFIX Plataforma de Tokenização e Crowdfunding Ltda · CNPJ 60.756.859/0001-57")
+        )
+      ),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}},
+        // Coluna esquerda
+        React.createElement("div",null,
+          React.createElement(Sec,{title:"1. Cedente (Credor)"},
+            React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+              React.createElement(Input,{label:"Nome / Razão Social",value:f.cedente,onChange:v=>up("cedente",v),placeholder:"Nome do cedente",style:{gridColumn:"1/3"}}),
+              React.createElement(Input,{label:"CPF / CNPJ",value:f.cpfCnpjCedente,onChange:v=>up("cpfCnpjCedente",v),placeholder:"000.000.000-00"}),
+              React.createElement(Input,{label:"E-mail",value:f.emailCedente,onChange:v=>up("emailCedente",v),placeholder:"email@empresa.com",type:"email"})
+            )
+          ),
+          React.createElement(Sec,{title:"2. Sacado (Devedor)"},
+            React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+              React.createElement(Input,{label:"Nome / Razão Social",value:f.sacado,onChange:v=>up("sacado",v),placeholder:"Nome do sacado",style:{gridColumn:"1/3"}}),
+              React.createElement(Input,{label:"CPF / CNPJ",value:f.cpfCnpjSacado,onChange:v=>up("cpfCnpjSacado",v),placeholder:"000.000.000-00"})
+            )
+          ),
+          React.createElement(Sec,{title:"3. Objeto da Cessão"},
+            React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+              React.createElement(Input,{label:"Descrição do Crédito",value:f.creditoDesc,onChange:v=>up("creditoDesc",v),placeholder:"Comissão de intermediação...",style:{gridColumn:"1/3"}}),
+              React.createElement(Input,{label:"Empreendimento / Origem",value:f.empreendimento,onChange:v=>up("empreendimento",v),placeholder:"Nome e endereço",style:{gridColumn:"1/3"}}),
+              React.createElement(Sel,{label:"Tipo de Operação",value:f.op,onChange:v=>up("op",v),options:[{value:"CR",label:"CR (IR Regressivo)"},{value:"Cessão",label:"Cessão (Ganho Capital)"}]}),
+              React.createElement(Sel,{label:"Coobrigação",value:f.coobrigacao,onChange:v=>up("coobrigacao",v),options:[{value:"sem",label:"Sem Coobrigação"},{value:"com",label:"Com Coobrigação"}]})
+            )
+          )
+        ),
+        // Coluna direita
+        React.createElement("div",null,
+          React.createElement(Sec,{title:"4. Valores & Antecipação"},
+            React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+              React.createElement(Input,{label:"Valor Bruto (R$)",value:f.valorBruto,onChange:v=>up("valorBruto",v),prefix:"R$",placeholder:"0,00"}),
+              React.createElement(Input,{label:"Tx. Desconto (%)",value:f.txDesconto,onChange:v=>up("txDesconto",v),suffix:"%"}),
+              React.createElement(Input,{label:"Royalty / Taxa Adm (%)",value:f.royalty,onChange:v=>up("royalty",v),suffix:"%"}),
+              React.createElement(Input,{label:"Nº de Parcelas",value:f.numParcelas,onChange:v=>up("numParcelas",v),type:"number"})
+            ),
+            React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}},
+              React.createElement(Input,{label:"Vencimento Original",value:f.vencimento,onChange:v=>up("vencimento",v),type:"date"}),
+              React.createElement(Sel,{label:"Prazo (dias)",value:f.prazo,onChange:v=>up("prazo",v),options:[{value:"1",label:"1 dia"},{value:"2",label:"2 dias"},{value:"3",label:"3 dias"},{value:"15",label:"15 dias"},{value:"30",label:"30 dias"},{value:"60",label:"60 dias"},{value:"90",label:"90 dias"}]}),
+              React.createElement(Sel,{label:"Forma de Pagamento",value:f.formaPgto,onChange:v=>up("formaPgto",v),options:[{value:"pix",label:"PIX"},{value:"ted",label:"TED"},{value:"hauspay",label:"Carteira HausPay"}],style:{gridColumn:"1/3"}})
+            )
+          ),
+          React.createElement(Sec,{title:"5. Resumo Financeiro"},
+            React.createElement("div",{style:{background:c.bg,borderRadius:10,padding:14,border:"1px solid #E8ECF2"}},
+              React.createElement(RoLine,{label:"Valor Bruto da Cessão:",value:fBRL(vb)}),
+              React.createElement(RoLine,{label:`(-) Desconto de Antecipação (${f.txDesconto}%):`,value:fBRL(desc)}),
+              React.createElement(RoLine,{label:`(-) Royalty / Tx Adm (${f.royalty}%):`,value:fBRL(roy)}),
+              React.createElement("div",{style:{borderTop:"1px solid #E8ECF2",marginTop:6,paddingTop:6}}),
+              React.createElement(RoLine,{label:"VALOR LÍQUIDO A RECEBER:",value:fBRL(vliq),bold:true,green:true}),
+              React.createElement("div",{style:{borderTop:"1px solid #E8ECF2",marginTop:6,paddingTop:6}}),
+              React.createElement(RoLine,{label:"CET (Custo Efetivo Total):",value:cet.toFixed(2)+"%"}),
+              nparc>1&&React.createElement(RoLine,{label:`Valor por Parcela (${nparc}x):`,value:fBRL(vparc)}),
+              React.createElement(RoLine,{label:"Prazo Pagamento:",value:`D+${f.prazo}`}),
+              React.createElement(RoLine,{label:"Coobrigação:",value:f.coobrigacao==="sem"?"Sem":"Com"})
+            )
+          ),
+          React.createElement("div",{style:{fontSize:10,color:c.dim,marginTop:6,lineHeight:1.5}},"Cessão nos termos dos arts. 286 a 298 do CC. Lastro: CR (Lei 14.430/22). Distribuição via CVM 88 (Ato 23.635/2025). Conta segregada: Bco 332 · Ag 0001 · Cc 1116408616.")
+        )
+      ),
+      React.createElement("div",{style:{display:"flex",gap:8,marginTop:18,justifyContent:"flex-end",borderTop:"1px solid #E8ECF2",paddingTop:14}},
+        React.createElement(Btn,{onClick:()=>{setF(blank);setShow(false)}},"Cancelar"),
+        React.createElement(Btn,{primary:true,color:c.green,onClick:add,disabled:!f.cedente||!f.valorBruto||!f.sacado},"Registrar Cessão On-Chain ◈")
+      )
+    ),
+    // Table
+    React.createElement(Card,{style:{padding:0,overflow:"hidden"}},
+      React.createElement("table",{style:{width:"100%",borderCollapse:"collapse"}},
+        React.createElement("thead",null,React.createElement("tr",null,["ID","Cedente","Sacado","Operação","Valor Bruto","Vlr Líquido","Prazo","Status","Data"].map(h=>React.createElement(TH,{key:h},h)))),
+        React.createElement("tbody",null,list.map(p=>React.createElement("tr",{key:p.id,style:{cursor:"pointer"},onMouseEnter:e=>e.currentTarget.style.background=c.bg,onMouseLeave:e=>e.currentTarget.style.background=""},
+          React.createElement(TD,{mono:true,color:c.accent},p.id),
+          React.createElement(TD,null,p.cedente),
+          React.createElement(TD,{color:c.sec,style:{fontSize:12}},p.sacado||"—"),
+          React.createElement(TD,null,React.createElement(Badge,{color:p.op==="CR"?c.green:c.purple},p.op)),
+          React.createElement(TD,{mono:true},fBRL(p.valor)),
+          React.createElement(TD,{mono:true,color:c.green},p.vliq?fBRL(p.vliq):"—"),
+          React.createElement(TD,{mono:true,color:c.dim},p.prazo),
+          React.createElement(TD,null,React.createElement(Badge,{color:p.status==="aprovada"?c.green:p.status==="pendente"?c.amber:c.blue},p.status)),
+          React.createElement(TD,{color:c.sec},p.data)
+        )))
+      )
+    )
+  );
+}
+
+function Recebiveis(){
+  const [fil,setFil]=useState("all");
+  const data=fil==="all"?initRecebiveis:initRecebiveis.filter(r=>r.status===fil);
+  return React.createElement("div",null,
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}},
+      React.createElement("div",null,
+        React.createElement("h2",{style:{fontSize:20,fontWeight:700}},"Carteira de Recebíveis"),
+        React.createElement("p",{style:{fontSize:13,color:c.dim,marginTop:4}},"Créditos cedidos com lastro on-chain")
+      ),
+      React.createElement("div",{style:{display:"flex",gap:5}},
+        ["all","ativo","pendente","liquidado"].map(f=>React.createElement(Btn,{key:f,primary:fil===f,small:true,onClick:()=>setFil(f)},f==="all"?"Todos":f))
+      )
+    ),
+    React.createElement(Card,{style:{padding:0,overflow:"hidden"}},
+      React.createElement("table",{style:{width:"100%",borderCollapse:"collapse"}},
+        React.createElement("thead",null,React.createElement("tr",null,["ID","Cedente","Sacado","Tipo","Valor","Vcto","Risk","Tx Hash","Status"].map(h=>React.createElement(TH,{key:h},h)))),
+        React.createElement("tbody",null,data.map(r=>React.createElement("tr",{key:r.id,onMouseEnter:e=>e.currentTarget.style.background=c.bg,onMouseLeave:e=>e.currentTarget.style.background=""},
+          React.createElement(TD,{mono:true,color:c.accent},r.id),
+          React.createElement(TD,null,r.cedente),
+          React.createElement(TD,{color:c.sec},r.sacado),
+          React.createElement(TD,null,React.createElement(Badge,{color:r.tipo==="CR"?c.green:c.purple},r.tipo)),
+          React.createElement(TD,{mono:true},fBRL(r.valor)),
+          React.createElement(TD,{color:c.sec},r.venc),
+          React.createElement(TD,null,React.createElement(Badge,{color:r.risco==="AA"?c.green:r.risco==="A"?c.blue:c.amber},r.risco)),
+          React.createElement(TD,{mono:true,color:r.tx?c.accent:c.dim,style:{fontSize:11}},r.tx||"pendente"),
+          React.createElement(TD,null,React.createElement(Badge,{color:r.status==="ativo"?c.green:r.status==="pendente"?c.amber:c.dim},r.status))
+        )))
+      )
+    )
+  );
+}
+
+function Cadastros(){
+  const [list,setList]=useState(initUsuarios);
+  const [show,setShow]=useState(false);
+  const [f,setF]=useState({nome:"",tipo:"cedente",doc:"",email:"",wallet:""});
+  const up=(k,v)=>setF(s=>({...s,[k]:v}));
+  const tipos={cedente:{color:c.green,label:"Cedente"},sacado:{color:c.blue,label:"Sacado"},investidor:{color:c.purple,label:"Investidor"},admin:{color:c.amber,label:"Admin"}};
+
+  const add=()=>{
+    if(!f.nome||!f.doc)return;
+    const novo={id:`USR-${String(list.length+1).padStart(3,"0")}`,nome:f.nome,tipo:f.tipo,doc:f.doc,wallet:f.wallet||null,email:f.email,status:"ativo"};
+    setList([novo,...list]);
+    setF({nome:"",tipo:"cedente",doc:"",email:"",wallet:""});
+    setShow(false);
+  };
+
+  return React.createElement("div",null,
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}},
+      React.createElement("div",null,
+        React.createElement("h2",{style:{fontSize:20,fontWeight:700}},"Cadastro de Participantes"),
+        React.createElement("p",{style:{fontSize:13,color:c.dim,marginTop:4}},"Cedentes, sacados, investidores e administradores")
+      ),
+      React.createElement(Btn,{primary:true,onClick:()=>setShow(!show)},show?"✕ Fechar":"+ Novo Cadastro")
+    ),
+    // Stats
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}},
+      Object.entries(tipos).map(([k,v])=>React.createElement(Card,{key:k,style:{textAlign:"center",marginBottom:0}},
+        React.createElement("div",{className:"mono",style:{fontSize:28,fontWeight:700,color:v.color}},list.filter(u=>u.tipo===k).length),
+        React.createElement("div",{style:{fontSize:10,color:c.dim,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:4}},v.label+"s")
+      ))
+    ),
+    // Form
+    show&&React.createElement(Card,{style:{border:`1px solid ${c.accent}30`,marginBottom:14}},
+      React.createElement("h3",{style:{fontSize:14,fontWeight:700,marginBottom:14}},"Novo Participante"),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}},
+        React.createElement(Input,{label:"Nome / Razão Social",value:f.nome,onChange:v=>up("nome",v),placeholder:"Nome completo"}),
+        React.createElement(Sel,{label:"Tipo",value:f.tipo,onChange:v=>up("tipo",v),options:[{value:"cedente",label:"Cedente"},{value:"sacado",label:"Sacado"},{value:"investidor",label:"Investidor"},{value:"admin",label:"Admin"}]}),
+        React.createElement(Input,{label:"CPF / CNPJ",value:f.doc,onChange:v=>up("doc",v),placeholder:"00.000.000/0001-00"})
+      ),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}},
+        React.createElement(Input,{label:"E-mail",value:f.email,onChange:v=>up("email",v),placeholder:"email@empresa.com.br",type:"email"}),
+        React.createElement(Input,{label:"Wallet (opcional)",value:f.wallet,onChange:v=>up("wallet",v),placeholder:"0x..."})
+      ),
+      React.createElement("div",{style:{display:"flex",gap:8,marginTop:14,justifyContent:"flex-end"}},
+        React.createElement(Btn,{onClick:()=>setShow(false)},"Cancelar"),
+        React.createElement(Btn,{primary:true,onClick:add,disabled:!f.nome||!f.doc},"Cadastrar")
+      )
+    ),
+    // Table
+    React.createElement(Card,{style:{padding:0,overflow:"hidden"}},
+      React.createElement("table",{style:{width:"100%",borderCollapse:"collapse"}},
+        React.createElement("thead",null,React.createElement("tr",null,["ID","Nome","Tipo","Documento","E-mail","Wallet","Status"].map(h=>React.createElement(TH,{key:h},h)))),
+        React.createElement("tbody",null,list.map(u=>React.createElement("tr",{key:u.id,onMouseEnter:e=>e.currentTarget.style.background=c.bg,onMouseLeave:e=>e.currentTarget.style.background=""},
+          React.createElement(TD,{mono:true,color:c.accent},u.id),
+          React.createElement(TD,null,u.nome),
+          React.createElement(TD,null,React.createElement(Badge,{color:tipos[u.tipo]?.color},tipos[u.tipo]?.label)),
+          React.createElement(TD,{mono:true,color:c.sec,style:{fontSize:12}},u.doc),
+          React.createElement(TD,{color:c.sec,style:{fontSize:12}},u.email||"—"),
+          React.createElement(TD,{mono:true,color:u.wallet?c.accent:c.dim,style:{fontSize:11}},u.wallet||"—"),
+          React.createElement(TD,null,React.createElement(Badge,{color:c.green},"Ativo"))
+        )))
+      )
+    )
+  );
+}
+
+function Banking({live}){
+  const [tab,setTab]=useState("pix");
+  const [pixAmt,setPixAmt]=useState("");
+  const [qr,setQr]=useState(null);
+  const [qrL,setQrL]=useState(false);
+  const [wallet,setWallet]=useState("0x7C54Dccd6fC5DB73b34f32aCA4d1631E054c7537");
+  const [depSt,setDepSt]=useState(null);
+  const [events,setEvents]=useState([]);
+  const [mintAddr,setMintAddr]=useState("0x7C54Dccd6fC5DB73b34f32aCA4d1631E054c7537");
+  const [mintAmt,setMintAmt]=useState("");
+  const [mintRes,setMintRes]=useState(null);
+
+  const genQR=async()=>{setQrL(true);setQr(await api.post("/api/pix/qrcode",{amount:Number(pixAmt)}));setQrL(false)};
+  const chkDep=async()=>setDepSt(await api.get(`/api/deposit/status/${wallet}`));
+  const loadEv=async()=>setEvents(await api.get(`/api/events?key=${KEY}&n=20`)||[]);
+  const doMint=async()=>setMintRes(await api.post(`/api/admin/deposit?key=${KEY}`,{userAddress:mintAddr,amount:mintAmt}));
+
+  useEffect(()=>{if(tab==="events")loadEv()},[tab]);
+  const opBal=live?.status?.operator?.balances;
+
+  return React.createElement("div",null,
+    React.createElement("h2",{style:{fontSize:20,fontWeight:700}},"Banking Module"),
+    React.createElement("p",{style:{fontSize:13,color:c.dim,marginTop:4,marginBottom:18}},"iHold API (PIX) · eFIX DI+ Protocol (Web3) · Live"),
+    // Stats
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}},
+      [{l:"Operador MATIC",v:opBal?Number(opBal.matic).toFixed(2):"...",s:"Gas (Polygon)"},
+       {l:"Operador USDC",v:opBal?`$${Number(opBal.usdc).toLocaleString()}`:"...",s:"Bridge liquidity"},
+       {l:"iHold Auth",v:live?.status?.services?.hausbank?.authenticated?"OK":"...",s:live?.status?.services?.hausbank?.circuit?.state||"..."},
+       {l:"Auto-Mint",v:live?.health?.services?.autoMint||"...",s:"Deposit poller 30s"}
+      ].map((x,i)=>React.createElement(Card,{key:i,style:{marginBottom:0}},
+        React.createElement("div",{style:{fontSize:10,color:c.dim,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}},x.l),
+        React.createElement("div",{className:"mono",style:{fontSize:22,fontWeight:700}},x.v),
+        React.createElement("div",{style:{fontSize:11,color:c.sec,marginTop:3}},x.s)
+      ))
+    ),
+    // Tabs
+    React.createElement("div",{style:{display:"flex",gap:5,marginBottom:14}},
+      ["pix","deposit","events","mint"].map(t=>React.createElement(Btn,{key:t,primary:tab===t,small:true,onClick:()=>setTab(t)},t==="pix"?"PIX QR Code":t==="deposit"?"Deposit Status":t==="events"?"Events (Live)":"Admin Mint"))
+    ),
+    // PIX
+    tab==="pix"&&React.createElement(Card,null,
+      React.createElement("h3",{style:{fontSize:14,fontWeight:700,marginBottom:4}},"Gerar QR Code PIX"),
+      React.createElement("p",{style:{fontSize:12,color:c.dim,marginBottom:14}},"POST /api/pix/qrcode → iHold PIX"),
+      React.createElement("div",{style:{display:"flex",gap:10,alignItems:"flex-end"}},
+        React.createElement(Input,{label:"Valor (R$)",value:pixAmt,onChange:setPixAmt,prefix:"R$",placeholder:"100.00"}),
+        React.createElement(Btn,{primary:true,onClick:genQR,disabled:qrL||!pixAmt,color:c.green},qrL?"Gerando...":"Gerar QR Code")
+      ),
+      qr?.success&&React.createElement("div",{style:{marginTop:16,padding:16,background:c.bg,borderRadius:10,display:"flex",gap:18}},
+        React.createElement("img",{src:qr.qrcode.imageUrl,alt:"QR",style:{width:160,height:160,borderRadius:8,border:"1px solid #E8ECF2"}}),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"QR Code gerado com sucesso"),
+          React.createElement("div",{style:{fontSize:12,color:c.sec,marginBottom:4}},React.createElement("b",null,"UUID: "),React.createElement("span",{className:"mono"},qr.qrcode.uuid)),
+          React.createElement("div",{style:{fontSize:12,color:c.sec,marginBottom:4}},React.createElement("b",null,"Valor: "),"R$ "+qr.qrcode.amount),
+          React.createElement("div",{style:{fontSize:12,color:c.sec,marginBottom:4}},React.createElement("b",null,"EMV (Copia e Cola):")),
+          React.createElement("div",{className:"mono",style:{fontSize:9,color:c.sec,wordBreak:"break-all",padding:8,background:"#fff",borderRadius:6,border:"1px solid #E8ECF2",maxHeight:60,overflow:"auto"}},qr.qrcode.emv)
+        )
+      ),
+      qr&&!qr.success&&React.createElement("div",{style:{marginTop:12,color:c.red,fontSize:13}},"Erro: "+qr.error)
+    ),
+    // Deposit
+    tab==="deposit"&&React.createElement(Card,null,
+      React.createElement("h3",{style:{fontSize:14,fontWeight:700,marginBottom:4}},"Verificar Depósito"),
+      React.createElement("p",{style:{fontSize:12,color:c.dim,marginBottom:14}},"GET /api/deposit/status/:wallet"),
+      React.createElement("div",{style:{display:"flex",gap:10,alignItems:"flex-end"}},
+        React.createElement(Input,{label:"Wallet",value:wallet,onChange:setWallet,placeholder:"0x..."}),
+        React.createElement(Btn,{primary:true,onClick:chkDep},"Verificar")
+      ),
+      depSt&&React.createElement("pre",{className:"mono",style:{marginTop:14,padding:12,background:c.bg,borderRadius:8,fontSize:12,whiteSpace:"pre-wrap"}},JSON.stringify(depSt,null,2))
+    ),
+    // Events
+    tab==="events"&&React.createElement(Card,null,
+      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:12}},
+        React.createElement("h3",{style:{fontSize:14,fontWeight:700}},"Protocol Events"),
+        React.createElement(Btn,{small:true,onClick:loadEv},"Refresh")
+      ),
+      events.length===0?React.createElement("div",{style:{padding:20,textAlign:"center",color:c.dim}},"Nenhum evento"):
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6,maxHeight:350,overflowY:"auto"}},
+        events.map((e,i)=>React.createElement("div",{key:i,style:{padding:"8px 10px",background:c.bg,borderRadius:7,fontSize:12}},
+          React.createElement("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:3}},
+            React.createElement(Badge,{color:e.type?.includes("deposit")?c.green:e.type?.includes("withdrawal")?c.purple:c.blue},e.type),
+            React.createElement("span",{className:"mono",style:{fontSize:10,color:c.dim}},e.ts?.slice(11,19))
+          ),
+          e.amount&&React.createElement("span",{className:"mono"},fBRL(e.amount)),
+          e.txHash&&React.createElement("span",{className:"mono",style:{fontSize:10,color:c.accent,marginLeft:8}},e.txHash)
+        ))
+      )
+    ),
+    // Mint
+    tab==="mint"&&React.createElement(Card,null,
+      React.createElement("h3",{style:{fontSize:14,fontWeight:700,marginBottom:4}},"Admin: Mint efixDI"),
+      React.createElement("p",{style:{fontSize:12,color:c.dim,marginBottom:14}},"POST /api/admin/deposit → confirmDepositDirect"),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:10,alignItems:"flex-end"}},
+        React.createElement(Input,{label:"Wallet",value:mintAddr,onChange:setMintAddr,placeholder:"0x..."}),
+        React.createElement(Input,{label:"Valor BRL",value:mintAmt,onChange:setMintAmt,prefix:"R$",placeholder:"100"}),
+        React.createElement(Btn,{primary:true,onClick:doMint,disabled:!mintAmt,color:c.green},"Mint ◈")
+      ),
+      mintRes&&React.createElement("pre",{className:"mono",style:{marginTop:12,padding:10,background:mintRes.status==="queued"?"#ECFDF5":"#FEF2F2",borderRadius:8,fontSize:12,color:mintRes.status==="queued"?c.green:c.red}},JSON.stringify(mintRes,null,2))
+    )
+  );
+}
+
+function Parametros(){
+  const [p,setP]=useState({taxaDesc:"2.50",spread:"1.00",cdiBps:"1490",usdcBps:"500",aliqIR:"15.00",prazoMin:"30",prazoMax:"360",limite:"50000000",ticket:"10000",custodia:"0.10",adm:"0.50",fatorRisco:"1.05",limConc:"25"});
+  const up=(k,v)=>setP(s=>({...s,[k]:v}));
+  return React.createElement("div",null,
+    React.createElement("h2",{style:{fontSize:20,fontWeight:700}},"Parâmetros de Emissão CR"),
+    React.createElement("p",{style:{fontSize:13,color:c.dim,marginTop:4,marginBottom:18}},"Taxas, impostos e limites para Certificados de Recebíveis"),
+    React.createElement(Card,null,
+      React.createElement("h3",{style:{fontSize:14,fontWeight:600,marginBottom:12}},"Taxas & Remuneração"),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}},
+        React.createElement(Input,{label:"Taxa Desconto (%a.m.)",value:p.taxaDesc,onChange:v=>up("taxaDesc",v),suffix:"%"}),
+        React.createElement(Input,{label:"Spread Securitizadora",value:p.spread,onChange:v=>up("spread",v),suffix:"% a.a."}),
+        React.createElement(Input,{label:"CDI Base (bps)",value:p.cdiBps,onChange:v=>up("cdiBps",v),suffix:"bps"}),
+        React.createElement(Input,{label:"USDC Borrow (bps)",value:p.usdcBps,onChange:v=>up("usdcBps",v),suffix:"bps"})
+      )
+    ),
+    React.createElement(Card,null,
+      React.createElement("h3",{style:{fontSize:14,fontWeight:600,marginBottom:12}},"Tributação"),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10}},
+        React.createElement(Input,{label:"Alíquota IR Base",value:p.aliqIR,onChange:v=>up("aliqIR",v),suffix:"%"}),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:10,fontWeight:600,color:c.dim,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:4}},"IR Regressivo (CR)"),
+          React.createElement("div",{style:{fontSize:11,color:c.sec,lineHeight:1.7,padding:"7px 9px",background:c.bg,borderRadius:7,border:"1px solid #E8ECF2"}},"≤180d: 22,5% · 181-360d: 20%",React.createElement("br"),"361-720d: 17,5% · >720d: 15%")
+        ),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:10,fontWeight:600,color:c.dim,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:4}},"Ganho Capital (GCAP)"),
+          React.createElement("div",{style:{fontSize:11,color:c.sec,lineHeight:1.7,padding:"7px 9px",background:c.bg,borderRadius:7,border:"1px solid #E8ECF2"}},"≤5M: 15% · 5-10M: 17,5%",React.createElement("br"),"10-30M: 20% · >30M: 22,5%")
+        ),
+        React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+          React.createElement(Input,{label:"Prazo Mín",value:p.prazoMin,onChange:v=>up("prazoMin",v),suffix:"d"}),
+          React.createElement(Input,{label:"Prazo Máx",value:p.prazoMax,onChange:v=>up("prazoMax",v),suffix:"d"})
+        )
+      )
+    ),
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
+      React.createElement(Card,null,
+        React.createElement("h3",{style:{fontSize:14,fontWeight:600,marginBottom:12}},"Limites"),
+        React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+          React.createElement(Input,{label:"Limite Emissão",value:p.limite,onChange:v=>up("limite",v),prefix:"R$"}),
+          React.createElement(Input,{label:"Ticket Mínimo",value:p.ticket,onChange:v=>up("ticket",v),prefix:"R$"})
+        )
+      ),
+      React.createElement(Card,null,
+        React.createElement("h3",{style:{fontSize:14,fontWeight:600,marginBottom:12}},"Custos & Risco"),
+        React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+          React.createElement(Input,{label:"Custódia (%a.a.)",value:p.custodia,onChange:v=>up("custodia",v),suffix:"%"}),
+          React.createElement(Input,{label:"Adm (%a.a.)",value:p.adm,onChange:v=>up("adm",v),suffix:"%"})
+        )
+      )
+    ),
+    React.createElement("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}},
+      React.createElement(Btn,null,"Restaurar Padrão"),
+      React.createElement(Btn,{primary:true,color:c.green},"Salvar Parâmetros")
+    )
+  );
+}
+
+function OnChain({live}){
+  const p=live?.protocol;
+  return React.createElement("div",null,
+    React.createElement("h2",{style:{fontSize:20,fontWeight:700}},"Infraestrutura On-Chain"),
+    React.createElement("p",{style:{fontSize:13,color:c.dim,marginTop:4,marginBottom:18}},"Smart contracts · Polygon & Base Mainnet"),
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}},
+      [{l:"efixDI Supply",v:p?Math.floor(Number(p.efix_total_supply)).toLocaleString("pt-BR"):"..."},
+       {l:"TVL",v:p?`R$ ${Math.floor(Number(p.tvl_brl)).toLocaleString("pt-BR")}`:"..."},
+       {l:"Bloco",v:p?`#${p.current_block?.toLocaleString()}`:"..."},
+       {l:"Vault",v:p?.vault_paused===false?"Ativo":"..."}
+      ].map((x,i)=>React.createElement(Card,{key:i,style:{marginBottom:0}},
+        React.createElement("div",{style:{fontSize:10,color:c.dim,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}},x.l),
+        React.createElement("div",{className:"mono",style:{fontSize:22,fontWeight:700}},x.v)
+      ))
+    ),
+    ["Polygon","Base"].map(chain=>React.createElement(Card,{key:chain},
+      React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:12}},
+        React.createElement("span",{style:{width:10,height:10,borderRadius:"50%",background:chain==="Polygon"?"#8247E5":"#0052FF"}}),
+        React.createElement("h3",{style:{fontSize:14,fontWeight:700}},chain)
+      ),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+        Object.entries(CONTRACTS).filter(([,v])=>v.chain===chain).map(([k,v])=>React.createElement("div",{key:k,style:{background:c.bg,border:"1px solid #E8ECF2",borderRadius:8,padding:12}},
+          React.createElement("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:4}},
+            React.createElement("span",{style:{fontSize:13,fontWeight:600}},v.name),
+            React.createElement(Badge,{color:c.green},"✓ Verified")
+          ),
+          React.createElement("a",{href:v.url,target:"_blank",rel:"noopener noreferrer",className:"mono",style:{fontSize:11,color:c.accent,textDecoration:"none"}},v.addr)
+        ))
+      )
+    ))
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// APP
+// ═══════════════════════════════════════════════════════════════
+
+const NAV=[
+  {key:"dashboard",label:"Dashboard",icon:"◆"},
+  {key:"propostas",label:"Propostas",icon:"◇"},
+  {key:"recebiveis",label:"Recebíveis",icon:"▣"},
+  {key:"cadastros",label:"Cadastros",icon:"◎"},
+  {key:"banking",label:"Banking",icon:"⬡"},
+  {key:"parametros",label:"Parâmetros CR",icon:"⚙"},
+  {key:"onchain",label:"On-Chain",icon:"◈"},
+];
+
+function App(){
+  const [page,setPage]=useState("dashboard");
+  const [live,setLive]=useState({health:null,status:null,protocol:null});
+
+  useEffect(()=>{
+    const poll=async()=>{
+      const [health,status]=await Promise.all([api.get("/health"),api.get(`/api/status?key=${KEY}`)]);
+      setLive({health,status,protocol:status?.protocol||null});
+    };
+    poll();
+    const iv=setInterval(poll,15000);
+    return()=>clearInterval(iv);
+  },[]);
+
+  const ok=live.health?.status==="ok";
+  const pages={dashboard:React.createElement(Dashboard,{live,go:setPage}),propostas:React.createElement(Propostas),recebiveis:React.createElement(Recebiveis),cadastros:React.createElement(Cadastros),banking:React.createElement(Banking,{live}),parametros:React.createElement(Parametros),onchain:React.createElement(OnChain,{live})};
+
+  return React.createElement("div",{style:{minHeight:"100vh",background:"#FAFBFD",display:"flex"}},
+    // Sidebar
+    React.createElement("nav",{style:{width:220,background:"#fff",borderRight:"1px solid #E8ECF2",display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh",flexShrink:0}},
+      React.createElement("div",{style:{padding:"18px 14px",borderBottom:"1px solid #E8ECF2",display:"flex",alignItems:"center",gap:10}},
+        React.createElement("img",{src:EFIX_LOGO,style:{width:32,height:32,borderRadius:9,objectFit:"cover"}}),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:15,fontWeight:700,letterSpacing:"0.04em"}},"EFIX"),
+          React.createElement("div",{style:{fontSize:9,color:c.dim,letterSpacing:"0.1em",textTransform:"uppercase"}},"Securitizadora S.A.")
+        )
+      ),
+      React.createElement("div",{style:{padding:"8px 6px",flex:1}},
+        NAV.map(n=>React.createElement("button",{key:n.key,onClick:()=>setPage(n.key),style:{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:7,border:"none",width:"100%",background:page===n.key?"#EEF2FF":"transparent",color:page===n.key?c.accent:"#4B5563",cursor:"pointer",fontSize:13,fontWeight:page===n.key?600:400,textAlign:"left"}},
+          React.createElement("span",{style:{fontSize:12,opacity:.6,width:16,textAlign:"center"}},n.icon),n.label
+        ))
+      ),
+      React.createElement("div",{style:{padding:"12px 14px",borderTop:"1px solid #E8ECF2",fontSize:11,color:c.dim}},
+        React.createElement("div",{style:{display:"flex",alignItems:"center",gap:5,marginBottom:4}},
+          React.createElement("span",{style:{width:7,height:7,borderRadius:"50%",background:ok?c.green:"#DC2626"}}),
+          ok?"Online":"Offline"
+        ),
+        React.createElement("div",{className:"mono",style:{fontSize:10}},ok?`Bloco #${live.health.block.toLocaleString()}`:"Conectando..."),
+        React.createElement("div",{style:{fontSize:9,marginTop:3}},"CVM Act 23.635/2025 · CNPJ 60.756.859/0001-57")
+      )
+    ),
+    // Main
+    React.createElement("main",{style:{flex:1,padding:"26px 30px",overflow:"auto"}},
+      React.createElement("div",{style:{maxWidth:1100}},pages[page])
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>

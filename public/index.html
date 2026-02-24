@@ -9,154 +9,579 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Inter',sans-serif;background:#FAFBFD;color:#111827;font-size:14px}
 .mono{font-family:'JetBrains Mono',monospace}
-input,select{font-family:'Inter',sans-serif;font-size:13px;padding:8px 10px;border:1px solid #D1D5DB;border-radius:8px;outline:none;background:#fff;width:100%;transition:border .2s}
-input:focus,select:focus{border-color:#6366F1;box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+input,select,textarea{font-family:'Inter',sans-serif;font-size:13px;padding:8px 10px;border:1px solid #D1D5DB;border-radius:8px;outline:none;background:#fff;width:100%;transition:border .2s}
+input:focus,select:focus,textarea:focus{border-color:#6366F1;box-shadow:0 0 0 3px rgba(99,102,241,.12)}
 input[type="date"]{cursor:pointer}
 input[type="date"]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.6}
+input[type="checkbox"]{width:auto;cursor:pointer}
 table{width:100%;border-collapse:collapse}
-th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6B7280;padding:10px 12px;border-bottom:1px solid #E5E7EB;background:#F9FAFB}
+th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6B7280;padding:10px 12px;border-bottom:1px solid #E5E7EB;background:#F9FAFB;white-space:nowrap}
 td{padding:10px 12px;border-bottom:1px solid #F3F4F6;font-size:13px}
 tr:hover td{background:#F9FAFB}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%);position:fixed!important;z-index:100;top:0;left:0;height:100vh;transition:transform .3s}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99}
+  .sidebar-overlay.open{display:block}
+  .mobile-header{display:flex!important}
+  .main-content{margin-left:0!important;padding:16px!important;padding-top:60px!important}
+  .grid-5{grid-template-columns:repeat(2,1fr)!important}
+  .grid-6{grid-template-columns:repeat(2,1fr)!important}
+  .grid-4{grid-template-columns:repeat(2,1fr)!important}
+  .grid-3{grid-template-columns:1fr!important}
+  .grid-2{grid-template-columns:1fr!important}
+  .flex-header{flex-direction:column!important;gap:10px!important;align-items:flex-start!important}
+  .form-grid{grid-template-columns:1fr!important}
+  .hide-mobile{display:none!important}
+}
+@media print{
+  .sidebar,.mobile-header,.no-print{display:none!important}
+  .main-content{margin:0!important;padding:0!important}
+}
 </style>
 </head><body><div id="root"></div>
 <script>
-const{createElement:h,useState,useEffect,Fragment}=React;
+const{createElement:h,useState,useEffect,useCallback,Fragment}=React;
 const c={accent:"#6366F1",green:"#10B981",red:"#EF4444",amber:"#F59E0B",purple:"#8B5CF6",blue:"#3B82F6",bg:"#FAFBFD",dim:"#6B7280",sec:"#9CA3AF",border:"#E5E7EB"};
 const EFIX_LOGO="/efix-logo.png";
 const fBRL=v=>"R$ "+Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const fPct=v=>Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
 const fDate=d=>{if(!d)return"\u2014";const p=new Date(d+"T12:00:00");return p.toLocaleDateString("pt-BR")};
 const diasAte=d=>{if(!d)return 0;const hoje=new Date();hoje.setHours(0,0,0,0);const v=new Date(d+"T12:00:00");return Math.ceil((v-hoje)/(1000*60*60*24))};
+const hoje=()=>{const d=new Date();return d.toISOString().split("T")[0]};
+
+/* TIR (Newton-Raphson IRR) */
+function calcTIR(fluxos){
+  if(!fluxos||fluxos.length<2)return 0;
+  let r=0.1;
+  for(let i=0;i<100;i++){
+    let npv=0,dnpv=0;
+    for(let t=0;t<fluxos.length;t++){
+      npv+=fluxos[t]/Math.pow(1+r,t);
+      dnpv+=-t*fluxos[t]/Math.pow(1+r,t+1);
+    }
+    if(Math.abs(dnpv)<1e-10)break;
+    const nr=r-npv/dnpv;
+    if(Math.abs(nr-r)<1e-8)break;
+    r=nr;
+  }
+  return isFinite(r)?r:0;
+}
 
 const initRecebiveis=[
-{id:"REC-001",dupl:"14550-5",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:51384.99,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-002",dupl:"14551-3",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:21433.54,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-003",dupl:"14552-1",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:14090.01,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-004",dupl:"14553-0",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:26096.38,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-005",dupl:"14554-8",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:2030.80,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-006",dupl:"14555-6",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:3347.01,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-007",dupl:"14556-4",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:161.15,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-008",dupl:"14557-2",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:168.02,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-009",dupl:"14558-1",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:1868.01,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-010",dupl:"14559-9",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:455.89,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-011",dupl:"14560-2",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:3372.05,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-012",dupl:"14561-1",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0006-76",valor:656.05,vencto:"2026-03-23",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica"},
-{id:"REC-013",dupl:"14562-9",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"ROCHESA TINTAS E VERNIZES",cnpjSacado:"74.068.552/0001-78",valor:14049.36,vencto:"2026-03-16",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Mercado"},
-{id:"REC-014",dupl:"14563-7",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"ROCHESA TINTAS E VERNIZES",cnpjSacado:"74.068.552/0001-78",valor:12827.07,vencto:"2026-03-16",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Mercado"},
-{id:"REC-015",dupl:"14564-5",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"ROCHESA TINTAS E VERNIZES",cnpjSacado:"74.068.552/0001-78",valor:1233.10,vencto:"2026-03-16",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Mercado"},
-{id:"REC-016",dupl:"14565-3",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"ROCHESA TINTAS E VERNIZES",cnpjSacado:"74.068.552/0001-78",valor:549.79,vencto:"2026-03-16",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Mercado"}
+{id:"REC-001",dupl:"14550-5",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:51384.99,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-002",dupl:"14551-3",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:21433.54,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-003",dupl:"14552-1",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:14090.01,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-004",dupl:"14553-0",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:26096.38,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-005",dupl:"14554-8",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:2030.80,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-006",dupl:"14555-6",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:3347.01,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-007",dupl:"14556-4",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:161.15,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-008",dupl:"14557-2",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:168.02,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-009",dupl:"14558-1",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:1868.01,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-010",dupl:"14559-9",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:455.89,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-011",dupl:"14560-2",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0001-61",valor:3372.05,vencto:"2026-03-25",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-012",dupl:"14561-1",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"SIDERQUIMICA IND. E COM. DE PROD. QUIMICOS S/A",cnpjSacado:"73.586.976/0006-76",valor:656.05,vencto:"2026-03-23",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Siderqu\u00edmica",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-013",dupl:"14562-9",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"ROCHESA TINTAS E VERNIZES",cnpjSacado:"74.068.552/0001-78",valor:14049.36,vencto:"2026-03-16",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Mercado",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-014",dupl:"14563-7",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"ROCHESA TINTAS E VERNIZES",cnpjSacado:"74.068.552/0001-78",valor:12827.07,vencto:"2026-03-16",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Mercado",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-015",dupl:"14564-5",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"ROCHESA TINTAS E VERNIZES",cnpjSacado:"74.068.552/0001-78",valor:1233.10,vencto:"2026-03-16",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Mercado",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""},
+{id:"REC-016",dupl:"14565-3",cedente:"C2LOG TRANSPORTES LTDA",cnpjCedente:"04.876.970/0001-06",sacado:"ROCHESA TINTAS E VERNIZES",cnpjSacado:"74.068.552/0001-78",valor:549.79,vencto:"2026-03-16",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR",tel:"4121053838",endereco:"RODOVIA BR-376, 376",bairro:"S\u00c3O MARCOS",cidade:"S\u00c3O JOS\u00c9 DOS PINHAIS",uf:"PR",cep:"83090-360",abatimento:0,status:"ativo",op:"Mercado",dataAquisicao:"2026-02-20",valorPago:0,dataLiquidacao:""}
 ];
 
-const Card=({children,style})=>h("div",{style:{background:"#fff",borderRadius:12,padding:20,border:"1px solid "+c.border,...style}},children);
-const Badge=({color,children})=>h("span",{style:{display:"inline-block",padding:"2px 8px",borderRadius:6,fontSize:10,fontWeight:700,background:color+"18",color,textTransform:"uppercase",letterSpacing:".04em"}},children);
-const Btn=({primary,small,children,onClick,disabled,color:cl})=>h("button",{onClick,disabled,style:{padding:small?"5px 10px":"8px 16px",borderRadius:8,border:primary?"none":"1px solid "+c.border,background:primary?(cl||c.accent):"#fff",color:primary?"#fff":"#374151",fontSize:small?11:13,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.5:1,transition:"all .15s"}},children);
-function Input({label,value,onChange,placeholder,type,prefix,suffix,style}){
-  return h("div",{style},label&&h("label",{style:{display:"block",fontSize:11,fontWeight:600,color:c.dim,marginBottom:4,textTransform:"uppercase",letterSpacing:".04em"}},label),
-  h("div",{style:{position:"relative"}},prefix&&h("span",{style:{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:c.sec}},prefix),
-  h("input",{type:type||"text",value:value||"",onChange:e=>onChange(e.target.value),placeholder,style:{paddingLeft:prefix?30:10,paddingRight:suffix?30:10}}),
-  suffix&&h("span",{style:{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:c.sec}},suffix)));
-}
-function Sel({label,value,onChange,options,style}){
-  return h("div",{style},label&&h("label",{style:{display:"block",fontSize:11,fontWeight:600,color:c.dim,marginBottom:4,textTransform:"uppercase",letterSpacing:".04em"}},label),
-  h("select",{value,onChange:e=>onChange(e.target.value)},options.map(o=>h("option",{key:o.value,value:o.value},o.label))));
+const defaultParams={txDesconto:2.50,royalty:1.00,prazoSider:30,prazoMercado:3,irRegressivo:[22.5,20,17.5,15],nomeSecuritizadora:"EFIX Securitizadora S.A.",cnpjSecuritizadora:"60.756.859/0001-57",contaBanco:"Bco 332 \u00b7 Ag 0001 \u00b7 Conta Segregada"};
+
+/* ========== SHARED COMPONENTS ========== */
+const Card=({children,style,className})=>h("div",{className,style:{background:"#fff",borderRadius:12,padding:20,border:"1px solid "+c.border,...style}},children);
+const Badge=({color,children})=>h("span",{style:{display:"inline-block",padding:"2px 8px",borderRadius:6,fontSize:10,fontWeight:700,background:color+"18",color,textTransform:"uppercase",letterSpacing:".04em",whiteSpace:"nowrap"}},children);
+const Btn=({primary,small,children,onClick,disabled,color:cl,style:st})=>h("button",{onClick,disabled,style:{padding:small?"5px 10px":"8px 16px",borderRadius:8,border:primary?"none":"1px solid "+c.border,background:primary?(cl||c.accent):"#fff",color:primary?"#fff":"#374151",fontSize:small?11:13,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.5:1,transition:"all .15s",whiteSpace:"nowrap",...st}},children);
+
+function Input({label,value,onChange,placeholder,type,prefix,suffix,style,disabled}){
+  return h("div",{style:style||{}},
+    label&&h("label",{style:{display:"block",fontSize:11,fontWeight:600,color:c.dim,marginBottom:4,textTransform:"uppercase",letterSpacing:".04em"}},label),
+    h("div",{style:{position:"relative"}},
+      prefix&&h("span",{style:{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:c.sec}},prefix),
+      h("input",{type:type||"text",value:value||"",onChange:e=>onChange(e.target.value),placeholder,disabled,style:{paddingLeft:prefix?30:10,paddingRight:suffix?30:10,background:disabled?"#F3F4F6":"#fff"}}),
+      suffix&&h("span",{style:{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:c.sec}},suffix)));
 }
 
-const pages=["Dashboard","Opera\u00e7\u00f5es","Receb\u00edveis","Cadastros","Banking","Par\u00e2metros","On-Chain"];
+function exportCSV(data,filename){
+  if(!data.length)return;
+  const keys=Object.keys(data[0]);
+  const csv=[keys.join(";"),...data.map(r=>keys.map(k=>String(r[k]||"").replace(/;/g,",")).join(";"))].join("\n");
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);
+}
 
-function Dashboard({recebiveis,setPage}){
+function gerarCR(rec,params){
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>CR ${rec.dupl}</title>
+<style>body{font-family:Arial,sans-serif;max-width:800px;margin:40px auto;padding:20px;color:#333}
+h1{color:#6366F1;border-bottom:2px solid #6366F1;padding-bottom:10px;font-size:22px}
+h2{color:#444;font-size:16px;margin-top:24px}
+table{width:100%;border-collapse:collapse;margin:12px 0}
+td,th{border:1px solid #ddd;padding:8px 12px;text-align:left;font-size:13px}
+th{background:#F3F4F6;font-weight:600}
+.footer{margin-top:40px;padding-top:16px;border-top:1px solid #ddd;font-size:11px;color:#888;text-align:center}
+.badge{display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:700;background:#10B98118;color:#10B981}
+@media print{body{margin:20px}}</style></head><body>
+<h1>Certificado de Receb\u00edvel (CR) \u2014 ${rec.dupl}</h1>
+<p style="color:#666;font-size:13px">${params.nomeSecuritizadora} \u00b7 CNPJ ${params.cnpjSecuritizadora} \u00b7 CVM Ato 23.635/2025</p>
+<h2>1. Dados do CR</h2>
+<table><tr><th>N\u00ba Duplicata</th><td class="mono">${rec.dupl}</td><th>Opera\u00e7\u00e3o</th><td><span class="badge">${rec.op}</span></td></tr>
+<tr><th>Valor Face</th><td class="mono">R$ ${Number(rec.valor).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td><th>Vencimento</th><td>${new Date(rec.vencto+"T12:00:00").toLocaleDateString("pt-BR")}</td></tr>
+<tr><th>Data Aquisi\u00e7\u00e3o</th><td>${rec.dataAquisicao?new Date(rec.dataAquisicao+"T12:00:00").toLocaleDateString("pt-BR"):"\u2014"}</td><th>Status</th><td>${rec.status}</td></tr></table>
+<h2>2. Cedente</h2>
+<table><tr><th>Raz\u00e3o Social</th><td>${rec.cedente}</td></tr><tr><th>CNPJ</th><td>${rec.cnpjCedente}</td></tr><tr><th>E-mail</th><td>${rec.email}</td></tr></table>
+<h2>3. Sacado (Devedor)</h2>
+<table><tr><th>Raz\u00e3o Social</th><td>${rec.sacado}</td></tr><tr><th>CNPJ</th><td>${rec.cnpjSacado}</td></tr></table>
+<h2>4. Condi\u00e7\u00f5es</h2>
+<table><tr><th>Taxa Desconto</th><td>${params.txDesconto}%</td><th>Royalty</th><td>${params.royalty}%</td></tr>
+<tr><th>Valor L\u00edquido</th><td class="mono">R$ ${(rec.valor*(1-params.txDesconto/100-params.royalty/100)).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td><th>Prazo</th><td>D+${rec.op==="Siderqu\u00edmica"?params.prazoSider:params.prazoMercado}</td></tr>
+<tr><th>Regime Fiscal</th><td colspan="3">${rec.op==="Siderqu\u00edmica"?"IR Regressivo (Lei 14.430/22)":"Ganho de Capital \u2014 Tabela Progressiva (GCAP)"}</td></tr></table>
+<h2>5. Conta Segregada</h2>
+<p>${params.contaBanco}</p>
+<p style="margin-top:12px;font-size:12px;color:#666">Cess\u00e3o conforme arts. 286-298 do C\u00f3digo Civil. Lastro: ${rec.op==="Siderqu\u00edmica"?"CR (Lei 14.430/22)":"Cess\u00e3o direta com \u00e1gio ao investidor"}.</p>
+<div class="footer">
+<p>Documento gerado em ${new Date().toLocaleString("pt-BR")} \u00b7 ${params.nomeSecuritizadora}</p>
+<p>Este documento n\u00e3o substitui o instrumento particular de cess\u00e3o. Validade mediante assinatura digital.</p></div>
+</body></html>`;
+  const blob=new Blob([html],{type:"text/html"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=url;a.download="CR-"+rec.dupl+".html";a.click();URL.revokeObjectURL(url);
+}
+
+const pages=["Dashboard","Opera\u00e7\u00f5es","Receb\u00edveis","Concilia\u00e7\u00e3o","Cadastros","Par\u00e2metros"];
+
+/* ========== DASHBOARD ========== */
+function Dashboard({recebiveis,params,setPage}){
   const total=recebiveis.reduce((s,r)=>s+r.valor,0);
   const ativos=recebiveis.filter(r=>r.status==="ativo");
   const totalAtivos=ativos.reduce((s,r)=>s+r.valor,0);
   const liquidados=recebiveis.filter(r=>r.status==="liquidado");
   const totalLiq=liquidados.reduce((s,r)=>s+r.valor,0);
+  const totalPago=liquidados.reduce((s,r)=>s+(r.valorPago||r.valor),0);
   const sider=recebiveis.filter(r=>r.op==="Siderqu\u00edmica");
   const mercado=recebiveis.filter(r=>r.op==="Mercado");
   const totalSider=sider.reduce((s,r)=>s+r.valor,0);
   const totalMercado=mercado.reduce((s,r)=>s+r.valor,0);
   const caixa=42850.00;
-  const vencer7=ativos.filter(r=>diasAte(r.vencto)<=7&&diasAte(r.vencto)>=0);
-  const vencer30=ativos.filter(r=>diasAte(r.vencto)<=30&&diasAte(r.vencto)>7);
+  const vencer7=ativos.filter(r=>{const d=diasAte(r.vencto);return d>=0&&d<=7});
+  const vencer30=ativos.filter(r=>{const d=diasAte(r.vencto);return d>7&&d<=30});
   const vencidos=ativos.filter(r=>diasAte(r.vencto)<0);
   const cedentes=[...new Set(recebiveis.map(r=>r.cedente))];
   const sacados=[...new Set(recebiveis.map(r=>r.sacado))];
-  const prazoMedio=ativos.length>0?ativos.reduce((s,r)=>s+diasAte(r.vencto),0)/ativos.length:0;
+  const prazoMedio=ativos.length>0?ativos.reduce((s,r)=>s+Math.max(0,diasAte(r.vencto)),0)/ativos.length:0;
   const ticketMedio=ativos.length>0?totalAtivos/ativos.length:0;
-  const Metric=({label,value,sub,color,big})=>h("div",{style:{textAlign:"center"}},h("div",{className:"mono",style:{fontSize:big?26:20,fontWeight:800,color:color||"#111827",lineHeight:1.2}},value),h("div",{style:{fontSize:10,color:c.dim,marginTop:4,fontWeight:600,textTransform:"uppercase",letterSpacing:".04em"}},label),sub&&h("div",{style:{fontSize:11,color:c.sec,marginTop:2}},sub));
-  const MiniCard=({label,value,color,icon})=>h("div",{style:{background:"#fff",borderRadius:10,padding:"12px 14px",border:"1px solid "+c.border,display:"flex",alignItems:"center",gap:10}},h("div",{style:{width:32,height:32,borderRadius:8,background:(color||c.accent)+"14",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}},icon),h("div",null,h("div",{style:{fontSize:10,color:c.dim,fontWeight:600}},label),h("div",{className:"mono",style:{fontSize:14,fontWeight:700,color:color||"#111827"}},value)));
+
+  /* Yield e TIR */
+  const descontoTotal=total*params.txDesconto/100;
+  const royaltyTotal=total*params.royalty/100;
+  const receitaBruta=descontoTotal+royaltyTotal;
+  const custoOp=receitaBruta*0.05; /* estimativa 5% custo operacional */
+  const resultado=receitaBruta-custoOp;
+  const yieldCarteira=total>0?(receitaBruta/total*100):0;
+  /* TIR simplificada: investimento inicial = valor líquido pago, retorno = valor face */
+  const vlPago=total*(1-params.txDesconto/100-params.royalty/100);
+  const tirAnual=prazoMedio>0?((total/vlPago-1)*(365/prazoMedio)*100):0;
+
+  const Metric=({label,value,sub,color,big})=>h("div",{style:{textAlign:"center",minWidth:0}},
+    h("div",{className:"mono",style:{fontSize:big?22:18,fontWeight:800,color:color||"#111827",lineHeight:1.2,wordBreak:"break-all"}},value),
+    h("div",{style:{fontSize:10,color:c.dim,marginTop:4,fontWeight:600,textTransform:"uppercase",letterSpacing:".04em"}},label),
+    sub&&h("div",{style:{fontSize:11,color:c.sec,marginTop:2}},sub));
+
+  const MiniCard=({label,value,color,icon})=>h("div",{style:{background:"#fff",borderRadius:10,padding:"10px 12px",border:"1px solid "+c.border,display:"flex",alignItems:"center",gap:8}},
+    h("div",{style:{width:28,height:28,borderRadius:7,background:(color||c.accent)+"14",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}},icon),
+    h("div",{style:{minWidth:0}},h("div",{style:{fontSize:9,color:c.dim,fontWeight:600}},label),h("div",{className:"mono",style:{fontSize:13,fontWeight:700,color:color||"#111827"}},value)));
+
   return h("div",null,
-    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}},h("div",null,h("h2",{style:{fontSize:22,fontWeight:800}},"Dashboard FIDC On-Chain"),h("p",{style:{fontSize:13,color:c.dim,marginTop:2}},"EFIX Securitizadora \u00b7 Vis\u00e3o consolidada")),h("div",{style:{display:"flex",gap:8}},h(Btn,{primary:true,onClick:()=>setPage("Opera\u00e7\u00f5es")},"+ Nova Cess\u00e3o"),h(Btn,{small:true,onClick:()=>setPage("Receb\u00edveis")},"Ver Carteira"))),
-    h(Card,{style:{marginBottom:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:16,padding:24}},h(Metric,{label:"Carteira Total",value:fBRL(total),color:"#111827",big:true}),h(Metric,{label:"A Receber (Ativos)",value:fBRL(totalAtivos),color:c.accent,sub:ativos.length+" t\u00edtulos"}),h(Metric,{label:"Liquidados",value:fBRL(totalLiq),color:c.green,sub:liquidados.length+" t\u00edtulos"}),h(Metric,{label:"Saldo em Caixa",value:fBRL(caixa),color:c.blue,sub:"Conta iHold (PIX)"}),h(Metric,{label:"PL do Fundo",value:fBRL(totalAtivos+caixa),color:c.purple,sub:"Ativos + Caixa"})),
-    h("div",{style:{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}},h(MiniCard,{label:"T\u00edtulos Ativos",value:ativos.length,icon:"\ud83d\udcc4",color:c.accent}),h(MiniCard,{label:"Cedentes",value:cedentes.length,icon:"\ud83c\udfe2",color:c.blue}),h(MiniCard,{label:"Sacados",value:sacados.length,icon:"\ud83c\udfed",color:c.purple}),h(MiniCard,{label:"Prazo M\u00e9dio",value:Math.round(prazoMedio)+"d",icon:"\ud83d\udcc5",color:c.amber}),h(MiniCard,{label:"Ticket M\u00e9dio",value:fBRL(ticketMedio),icon:"\ud83d\udcb0",color:c.green}),h(MiniCard,{label:"Inadimpl\u00eancia",value:"0,00%",icon:"\ud83d\udee1\ufe0f",color:c.green})),
-    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}},
-      h(Card,null,h("h3",{style:{fontSize:14,fontWeight:700,marginBottom:14}},"Composi\u00e7\u00e3o por Opera\u00e7\u00e3o"),h("div",{style:{display:"flex",gap:16}},h("div",{style:{flex:1}},h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:6}},h("span",{style:{fontSize:12,fontWeight:600}},"Siderqu\u00edmica (CR)"),h("span",{className:"mono",style:{fontSize:12,fontWeight:700,color:c.green}},fBRL(totalSider))),h("div",{style:{height:8,background:"#F3F4F6",borderRadius:4,overflow:"hidden"}},h("div",{style:{width:(total>0?totalSider/total*100:0)+"%",height:"100%",background:c.green,borderRadius:4}})),h("div",{style:{fontSize:11,color:c.dim,marginTop:4}},sider.length+" t\u00edtulos \u00b7 IR regressivo \u00b7 D+30")),h("div",{style:{flex:1}},h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:6}},h("span",{style:{fontSize:12,fontWeight:600}},"Mercado (Cess\u00e3o)"),h("span",{className:"mono",style:{fontSize:12,fontWeight:700,color:c.purple}},fBRL(totalMercado))),h("div",{style:{height:8,background:"#F3F4F6",borderRadius:4,overflow:"hidden"}},h("div",{style:{width:(total>0?totalMercado/total*100:0)+"%",height:"100%",background:c.purple,borderRadius:4}})),h("div",{style:{fontSize:11,color:c.dim,marginTop:4}},mercado.length+" t\u00edtulos \u00b7 Ganho capital \u00b7 D+3")))),
-      h(Card,null,h("h3",{style:{fontSize:14,fontWeight:700,marginBottom:14}},"Aging de Vencimentos"),h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}},h("div",{style:{textAlign:"center",padding:12,background:vencidos.length>0?c.red+"10":"#F9FAFB",borderRadius:8,border:"1px solid "+(vencidos.length>0?c.red+"30":c.border)}},h("div",{className:"mono",style:{fontSize:20,fontWeight:800,color:vencidos.length>0?c.red:c.sec}},vencidos.length),h("div",{style:{fontSize:10,color:c.dim,fontWeight:600,marginTop:4}},"VENCIDOS"),h("div",{className:"mono",style:{fontSize:11,color:c.sec}},fBRL(vencidos.reduce((s,r)=>s+r.valor,0)))),h("div",{style:{textAlign:"center",padding:12,background:c.amber+"10",borderRadius:8,border:"1px solid "+c.amber+"30"}},h("div",{className:"mono",style:{fontSize:20,fontWeight:800,color:c.amber}},vencer7.length),h("div",{style:{fontSize:10,color:c.dim,fontWeight:600,marginTop:4}},"PR\u00d3X. 7 DIAS"),h("div",{className:"mono",style:{fontSize:11,color:c.sec}},fBRL(vencer7.reduce((s,r)=>s+r.valor,0)))),h("div",{style:{textAlign:"center",padding:12,background:c.green+"10",borderRadius:8,border:"1px solid "+c.green+"30"}},h("div",{className:"mono",style:{fontSize:20,fontWeight:800,color:c.green}},vencer30.length),h("div",{style:{fontSize:10,color:c.dim,fontWeight:600,marginTop:4}},"8-30 DIAS"),h("div",{className:"mono",style:{fontSize:11,color:c.sec}},fBRL(vencer30.reduce((s,r)=>s+r.valor,0))))))),
-    h(Card,{style:{padding:0,overflow:"hidden"}},h("div",{style:{padding:"14px 16px",borderBottom:"1px solid "+c.border,display:"flex",justifyContent:"space-between",alignItems:"center"}},h("h3",{style:{fontSize:14,fontWeight:700}},"Carteira de Receb\u00edveis ("+recebiveis.length+" t\u00edtulos)"),h(Btn,{small:true,onClick:()=>setPage("Receb\u00edveis")},"Ver todos \u2192")),h("div",{style:{overflowX:"auto"}},h("table",null,h("thead",null,h("tr",null,["N\u00ba Dupl","Cedente","Sacado","Op","Valor","Vencto","Dias","Status"].map(t=>h("th",{key:t},t)))),h("tbody",null,recebiveis.slice(0,10).map(r=>h("tr",{key:r.id},h("td",{className:"mono",style:{color:c.accent,fontWeight:600}},r.dupl),h("td",{style:{fontSize:12,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.cedente),h("td",{style:{fontSize:12,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.sacado),h("td",null,h(Badge,{color:r.op==="Siderqu\u00edmica"?c.green:c.purple},r.op)),h("td",{className:"mono",style:{fontWeight:600}},fBRL(r.valor)),h("td",{className:"mono",style:{fontSize:12}},fDate(r.vencto)),h("td",{className:"mono",style:{fontSize:12,color:diasAte(r.vencto)<0?c.red:diasAte(r.vencto)<=7?c.amber:c.green}},diasAte(r.vencto)+"d"),h("td",null,h(Badge,{color:r.status==="ativo"?c.green:r.status==="liquidado"?c.blue:c.red},r.status)))))))));
+    h("div",{className:"flex-header",style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      h("div",null,h("h2",{style:{fontSize:20,fontWeight:800}},"Dashboard FIDC"),h("p",{style:{fontSize:12,color:c.dim,marginTop:2}},"EFIX Securitizadora \u00b7 Vis\u00e3o consolidada")),
+      h("div",{style:{display:"flex",gap:8,flexWrap:"wrap"}},h(Btn,{primary:true,onClick:()=>setPage("Opera\u00e7\u00f5es")},"+ Nova Cess\u00e3o"),h(Btn,{small:true,onClick:()=>setPage("Concilia\u00e7\u00e3o")},"Conciliar"))),
+
+    /* Big metrics */
+    h(Card,{style:{marginBottom:12,display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,padding:16},className:"grid-5"},
+      h(Metric,{label:"Carteira Total",value:fBRL(total),color:"#111827",big:true}),
+      h(Metric,{label:"A Receber",value:fBRL(totalAtivos),color:c.accent,sub:ativos.length+" t\u00edtulos"}),
+      h(Metric,{label:"Liquidados",value:fBRL(totalLiq),color:c.green,sub:liquidados.length+" t\u00edtulos"}),
+      h(Metric,{label:"Saldo Caixa",value:fBRL(caixa),color:c.blue,sub:"iHold PIX"}),
+      h(Metric,{label:"PL Fundo",value:fBRL(totalAtivos+caixa),color:c.purple,sub:"Ativos+Caixa"})),
+
+    /* Mini cards - 6 col */
+    h("div",{className:"grid-6",style:{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:12}},
+      h(MiniCard,{label:"T\u00edtulos Ativos",value:ativos.length,icon:"\ud83d\udcc4",color:c.accent}),
+      h(MiniCard,{label:"Cedentes",value:cedentes.length,icon:"\ud83c\udfe2",color:c.blue}),
+      h(MiniCard,{label:"Sacados",value:sacados.length,icon:"\ud83c\udfed",color:c.purple}),
+      h(MiniCard,{label:"Prazo M\u00e9dio",value:Math.round(prazoMedio)+"d",icon:"\ud83d\udcc5",color:c.amber}),
+      h(MiniCard,{label:"Ticket M\u00e9dio",value:fBRL(ticketMedio),icon:"\ud83d\udcb0",color:c.green}),
+      h(MiniCard,{label:"Inadimpl.",value:fPct(total>0?vencidos.reduce((s,r)=>s+r.valor,0)/total*100:0),icon:"\ud83d\udee1",color:vencidos.length>0?c.red:c.green})),
+
+    /* Financial metrics row */
+    h(Card,{style:{marginBottom:12,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,padding:16},className:"grid-4"},
+      h(Metric,{label:"Yield Carteira",value:fPct(yieldCarteira),color:c.green,sub:"Desc+Royalty/Face"}),
+      h(Metric,{label:"TIR Anualizada",value:fPct(tirAnual),color:c.accent,sub:"Newton-Raphson"}),
+      h(Metric,{label:"Receita Bruta",value:fBRL(receitaBruta),color:c.blue,sub:"Desc "+fPct(params.txDesconto)+" + Roy "+fPct(params.royalty)}),
+      h(Metric,{label:"Resultado Est.",value:fBRL(resultado),color:resultado>=0?c.green:c.red,sub:"Receita - Custos Op."})),
+
+    /* Composition + Aging */
+    h("div",{className:"grid-2",style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}},
+      h(Card,null,
+        h("h3",{style:{fontSize:13,fontWeight:700,marginBottom:12}},"Composi\u00e7\u00e3o por Opera\u00e7\u00e3o"),
+        h("div",{style:{marginBottom:12}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:4}},h("span",{style:{fontSize:12,fontWeight:600}},"Siderqu\u00edmica (CR)"),h("span",{className:"mono",style:{fontSize:12,fontWeight:700,color:c.green}},fBRL(totalSider))),
+          h("div",{style:{height:8,background:"#F3F4F6",borderRadius:4,overflow:"hidden"}},h("div",{style:{width:(total>0?totalSider/total*100:0)+"%",height:"100%",background:c.green,borderRadius:4}})),
+          h("div",{style:{fontSize:11,color:c.dim,marginTop:3}},sider.length+" t\u00edtulos \u00b7 IR regressivo \u00b7 D+"+params.prazoSider)),
+        h("div",null,
+          h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:4}},h("span",{style:{fontSize:12,fontWeight:600}},"Mercado (Cess\u00e3o)"),h("span",{className:"mono",style:{fontSize:12,fontWeight:700,color:c.purple}},fBRL(totalMercado))),
+          h("div",{style:{height:8,background:"#F3F4F6",borderRadius:4,overflow:"hidden"}},h("div",{style:{width:(total>0?totalMercado/total*100:0)+"%",height:"100%",background:c.purple,borderRadius:4}})),
+          h("div",{style:{fontSize:11,color:c.dim,marginTop:3}},mercado.length+" t\u00edtulos \u00b7 Ganho capital \u00b7 D+"+params.prazoMercado))),
+      h(Card,null,
+        h("h3",{style:{fontSize:13,fontWeight:700,marginBottom:12}},"Aging de Vencimentos"),
+        h("div",{className:"grid-3",style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
+          h("div",{style:{textAlign:"center",padding:10,background:vencidos.length>0?c.red+"10":"#F9FAFB",borderRadius:8,border:"1px solid "+(vencidos.length>0?c.red+"30":c.border)}},
+            h("div",{className:"mono",style:{fontSize:18,fontWeight:800,color:vencidos.length>0?c.red:c.sec}},vencidos.length),
+            h("div",{style:{fontSize:9,color:c.dim,fontWeight:600,marginTop:3}},"VENCIDOS"),
+            h("div",{className:"mono",style:{fontSize:10,color:c.sec}},fBRL(vencidos.reduce((s,r)=>s+r.valor,0)))),
+          h("div",{style:{textAlign:"center",padding:10,background:c.amber+"10",borderRadius:8,border:"1px solid "+c.amber+"30"}},
+            h("div",{className:"mono",style:{fontSize:18,fontWeight:800,color:c.amber}},vencer7.length),
+            h("div",{style:{fontSize:9,color:c.dim,fontWeight:600,marginTop:3}},"7 DIAS"),
+            h("div",{className:"mono",style:{fontSize:10,color:c.sec}},fBRL(vencer7.reduce((s,r)=>s+r.valor,0)))),
+          h("div",{style:{textAlign:"center",padding:10,background:c.green+"10",borderRadius:8,border:"1px solid "+c.green+"30"}},
+            h("div",{className:"mono",style:{fontSize:18,fontWeight:800,color:c.green}},vencer30.length),
+            h("div",{style:{fontSize:9,color:c.dim,fontWeight:600,marginTop:3}},"8-30 DIAS"),
+            h("div",{className:"mono",style:{fontSize:10,color:c.sec}},fBRL(vencer30.reduce((s,r)=>s+r.valor,0))))))),
+
+    /* Table */
+    h(Card,{style:{padding:0,overflow:"hidden"}},
+      h("div",{style:{padding:"12px 16px",borderBottom:"1px solid "+c.border,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}},
+        h("h3",{style:{fontSize:13,fontWeight:700}},"Carteira ("+recebiveis.length+" t\u00edtulos)"),
+        h("div",{style:{display:"flex",gap:6}},
+          h(Btn,{small:true,onClick:()=>exportCSV(recebiveis,"efix-carteira.csv")},"Exportar CSV"),
+          h(Btn,{small:true,onClick:()=>setPage("Receb\u00edveis")},"Ver todos \u2192"))),
+      h("div",{style:{overflowX:"auto"}},
+        h("table",null,
+          h("thead",null,h("tr",null,["Dupl","Sacado","Op","Valor","Vencto","Dias","Status"].map(t=>h("th",{key:t},t)))),
+          h("tbody",null,recebiveis.slice(0,8).map(r=>h("tr",{key:r.id},
+            h("td",{className:"mono",style:{color:c.accent,fontWeight:600,fontSize:12}},r.dupl),
+            h("td",{style:{fontSize:12,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.sacado),
+            h("td",null,h(Badge,{color:r.op==="Siderqu\u00edmica"?c.green:c.purple},r.op)),
+            h("td",{className:"mono",style:{fontWeight:600,fontSize:12}},fBRL(r.valor)),
+            h("td",{className:"mono",style:{fontSize:11}},fDate(r.vencto)),
+            h("td",{className:"mono",style:{fontSize:11,color:diasAte(r.vencto)<0?c.red:diasAte(r.vencto)<=7?c.amber:c.green}},diasAte(r.vencto)+"d"),
+            h("td",null,h(Badge,{color:r.status==="ativo"?c.green:r.status==="liquidado"?c.blue:c.red},r.status)))))))));
 }
 
-function Operacoes({recebiveis,setRecebiveis}){
+/* ========== OPERA\u00c7\u00d5ES ========== */
+function Operacoes({recebiveis,setRecebiveis,params}){
   const [show,setShow]=useState(false);
   const [step,setStep]=useState(0);
   const [tipo,setTipo]=useState("");
-  const blank={cedente:"",cnpjCedente:"",sacado:"",cnpjSacado:"",dupl:"",valor:"",vencto:"",chaveNf:"",endereco:"",bairro:"",cidade:"",uf:"",cep:"",email:"",tel:"",abatimento:"0",txDesconto:"2.50",royalty:"1.00"};
+  const blank={cedente:"",cnpjCedente:"",sacado:"",cnpjSacado:"",dupl:"",valor:"",vencto:"",chaveNf:"",endereco:"",bairro:"",cidade:"",uf:"",cep:"",email:"",tel:"",abatimento:"0"};
   const [f,setF]=useState(blank);
   const up=(k,v)=>setF(s=>({...s,[k]:v}));
-  const vb=Number(f.valor)||0;const desc=vb*(Number(f.txDesconto)||0)/100;const roy=vb*(Number(f.royalty)||0)/100;const vliq=Math.max(0,vb-desc-roy);
-  const add=()=>{if(!f.cedente||!f.valor||!f.sacado||!f.dupl||!f.vencto)return;const novo={id:"REC-"+String(recebiveis.length+1).padStart(3,"0"),dupl:f.dupl,cedente:f.cedente,cnpjCedente:f.cnpjCedente,sacado:f.sacado,cnpjSacado:f.cnpjSacado,valor:vb,vencto:f.vencto,endereco:f.endereco,bairro:f.bairro,cidade:f.cidade,uf:f.uf,cep:f.cep,email:f.email,tel:f.tel,abatimento:Number(f.abatimento)||0,status:"ativo",op:tipo};setRecebiveis([novo,...recebiveis]);setF(blank);setShow(false);setStep(0);setTipo("")};
+  const vb=Number(f.valor)||0;
+  const desc=vb*params.txDesconto/100;
+  const roy=vb*params.royalty/100;
+  const vliq=Math.max(0,vb-desc-roy);
+
+  const add=()=>{
+    if(!f.cedente||!f.valor||!f.sacado||!f.dupl||!f.vencto)return;
+    const novo={id:"REC-"+String(recebiveis.length+1).padStart(3,"0"),dupl:f.dupl,cedente:f.cedente,cnpjCedente:f.cnpjCedente,sacado:f.sacado,cnpjSacado:f.cnpjSacado,valor:vb,vencto:f.vencto,endereco:f.endereco,bairro:f.bairro,cidade:f.cidade,uf:f.uf,cep:f.cep,email:f.email,tel:f.tel,abatimento:Number(f.abatimento)||0,status:"ativo",op:tipo,dataAquisicao:hoje(),valorPago:0,dataLiquidacao:""};
+    setRecebiveis([novo,...recebiveis]);setF(blank);setShow(false);setStep(0);setTipo("");
+  };
   const cancel=()=>{setF(blank);setShow(false);setStep(0);setTipo("")};
-  const OpCard=({title,sub,icon,color,onClick})=>h("div",{onClick,style:{cursor:"pointer",padding:24,borderRadius:12,border:"2px solid "+c.border,background:"#fff",textAlign:"center",transition:"all .2s"},onMouseEnter:e=>{e.currentTarget.style.borderColor=color;e.currentTarget.style.background=color+"08"},onMouseLeave:e=>{e.currentTarget.style.borderColor=c.border;e.currentTarget.style.background="#fff"}},h("div",{style:{fontSize:36,marginBottom:8}},icon),h("div",{style:{fontSize:16,fontWeight:700,color}},title),h("div",{style:{fontSize:12,color:c.dim,marginTop:6,lineHeight:1.5}},sub));
+
+  const OpCard=({title,sub,icon,color,onClick})=>h("div",{onClick,style:{cursor:"pointer",padding:20,borderRadius:12,border:"2px solid "+c.border,background:"#fff",textAlign:"center",transition:"all .2s"},onMouseEnter:e=>{e.currentTarget.style.borderColor=color;e.currentTarget.style.background=color+"08"},onMouseLeave:e=>{e.currentTarget.style.borderColor=c.border;e.currentTarget.style.background="#fff"}},
+    h("div",{style:{fontSize:32,marginBottom:6}},icon),
+    h("div",{style:{fontSize:15,fontWeight:700,color}},title),
+    h("div",{style:{fontSize:11,color:c.dim,marginTop:4,lineHeight:1.4}},sub));
+
   return h("div",null,
-    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}},h("div",null,h("h2",{style:{fontSize:20,fontWeight:700}},"Gest\u00e3o de Opera\u00e7\u00f5es"),h("p",{style:{fontSize:13,color:c.dim,marginTop:4}},"Cess\u00e3o de direitos credit\u00f3rios \u00b7 Lei 14.430/22")),h(Btn,{primary:true,onClick:()=>{setShow(!show);setStep(0);setTipo("")}},show?"\u2715 Fechar":"+ Nova Cess\u00e3o")),
-    show&&step===0&&h(Card,{style:{border:"1px solid "+c.accent+"30",marginBottom:14}},h("div",{style:{textAlign:"center",marginBottom:20}},h("h3",{style:{fontSize:16,fontWeight:700}},"Qual tipo de opera\u00e7\u00e3o?"),h("p",{style:{fontSize:13,color:c.dim,marginTop:4}},"Escolha o modelo de cess\u00e3o")),h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:600,margin:"0 auto"}},h(OpCard,{title:"Siderqu\u00edmica",sub:"CR \u00b7 IR Regressivo \u00b7 D+30 \u00b7 Securitizadora emite CR com lastro no cr\u00e9dito",icon:"\ud83c\udfed",color:c.green,onClick:()=>{setTipo("Siderqu\u00edmica");setStep(1)}}),h(OpCard,{title:"Mercado",sub:"Cess\u00e3o \u00b7 Ganho de Capital \u00b7 D+3 \u00b7 Cess\u00e3o direta com \u00e1gio ao investidor",icon:"\ud83d\udcc8",color:c.purple,onClick:()=>{setTipo("Mercado");setStep(1)}}))),
-    show&&step===1&&h(Card,{style:{border:"1px solid "+c.accent+"30",marginBottom:14}},
-      h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:18}},h("img",{src:EFIX_LOGO,style:{width:28,height:28,borderRadius:6}}),h("div",{style:{flex:1}},h("h3",{style:{fontSize:15,fontWeight:700,margin:0}},"Nova Cess\u00e3o \u2014 "+tipo),h("p",{style:{fontSize:11,color:c.dim,margin:0}},"EFIX \u00b7 CNPJ 60.756.859/0001-57 \u00b7 "+(tipo==="Siderqu\u00edmica"?"CR / IR Regressivo / D+30":"Cess\u00e3o / Ganho Capital / D+3"))),h(Badge,{color:tipo==="Siderqu\u00edmica"?c.green:c.purple},tipo),h(Btn,{small:true,onClick:()=>setStep(0)},"\u2190 Trocar")),
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}},
+    h("div",{className:"flex-header",style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      h("div",null,h("h2",{style:{fontSize:20,fontWeight:700}},"Gest\u00e3o de Opera\u00e7\u00f5es"),h("p",{style:{fontSize:12,color:c.dim,marginTop:2}},"Cess\u00e3o de direitos credit\u00f3rios \u00b7 Lei 14.430/22")),
+      h(Btn,{primary:true,onClick:()=>{setShow(!show);setStep(0);setTipo("")}},show?"\u2715 Fechar":"+ Nova Cess\u00e3o")),
+
+    /* Step 0: Choose type */
+    show&&step===0&&h(Card,{style:{border:"1px solid "+c.accent+"30",marginBottom:12}},
+      h("div",{style:{textAlign:"center",marginBottom:16}},h("h3",{style:{fontSize:15,fontWeight:700}},"Qual tipo de opera\u00e7\u00e3o?"),h("p",{style:{fontSize:12,color:c.dim,marginTop:4}},"Escolha o modelo de cess\u00e3o")),
+      h("div",{className:"grid-2",style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:500,margin:"0 auto"}},
+        h(OpCard,{title:"Siderqu\u00edmica",sub:"CR \u00b7 IR Regressivo \u00b7 D+"+params.prazoSider,icon:"\ud83c\udfed",color:c.green,onClick:()=>{setTipo("Siderqu\u00edmica");setStep(1)}}),
+        h(OpCard,{title:"Mercado",sub:"Cess\u00e3o \u00b7 Ganho Capital \u00b7 D+"+params.prazoMercado,icon:"\ud83d\udcc8",color:c.purple,onClick:()=>{setTipo("Mercado");setStep(1)}}))),
+
+    /* Step 1: Form */
+    show&&step===1&&h(Card,{style:{border:"1px solid "+c.accent+"30",marginBottom:12}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:16,flexWrap:"wrap"}},
+        h("img",{src:EFIX_LOGO,style:{width:24,height:24,borderRadius:5}}),
+        h("div",{style:{flex:1,minWidth:150}},h("h3",{style:{fontSize:14,fontWeight:700,margin:0}},"Nova Cess\u00e3o \u2014 "+tipo),h("p",{style:{fontSize:11,color:c.dim,margin:0}},"Desc "+fPct(params.txDesconto)+" \u00b7 Royalty "+fPct(params.royalty)+" \u00b7 D+"+(tipo==="Siderqu\u00edmica"?params.prazoSider:params.prazoMercado))),
+        h(Badge,{color:tipo==="Siderqu\u00edmica"?c.green:c.purple},tipo),
+        h(Btn,{small:true,onClick:()=>setStep(0)},"\u2190 Trocar")),
+      h("div",{className:"form-grid",style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}},
+        /* Left: Cedente + Sacado */
         h("div",null,
-          h("div",{style:{fontSize:11,fontWeight:700,color:c.accent,letterSpacing:".06em",textTransform:"uppercase",marginBottom:10,paddingBottom:6,borderBottom:"1px solid "+c.accent+"20"}},"CEDENTE"),
-          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}},h(Input,{label:"Nome / Raz\u00e3o Social",value:f.cedente,onChange:v=>up("cedente",v),placeholder:"Raz\u00e3o social",style:{gridColumn:"1/3"}}),h(Input,{label:"CNPJ",value:f.cnpjCedente,onChange:v=>up("cnpjCedente",v),placeholder:"00.000.000/0001-00"}),h(Input,{label:"E-mail",value:f.email,onChange:v=>up("email",v),placeholder:"email@empresa.com"}),h(Input,{label:"Telefone",value:f.tel,onChange:v=>up("tel",v),placeholder:"(00) 0000-0000"}),h(Input,{label:"Endere\u00e7o",value:f.endereco,onChange:v=>up("endereco",v),placeholder:"Rua, n\u00famero",style:{gridColumn:"1/3"}}),h(Input,{label:"Bairro",value:f.bairro,onChange:v=>up("bairro",v)}),h(Input,{label:"Cidade",value:f.cidade,onChange:v=>up("cidade",v)}),h(Input,{label:"UF",value:f.uf,onChange:v=>up("uf",v)}),h(Input,{label:"CEP",value:f.cep,onChange:v=>up("cep",v)})),
-          h("div",{style:{fontSize:11,fontWeight:700,color:c.accent,letterSpacing:".06em",textTransform:"uppercase",marginBottom:10,paddingBottom:6,borderBottom:"1px solid "+c.accent+"20"}},"SACADO (DEVEDOR)"),
-          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},h(Input,{label:"Nome / Raz\u00e3o Social",value:f.sacado,onChange:v=>up("sacado",v),placeholder:"Nome do sacado",style:{gridColumn:"1/3"}}),h(Input,{label:"CNPJ",value:f.cnpjSacado,onChange:v=>up("cnpjSacado",v),placeholder:"00.000.000/0001-00"}))
-        ),
+          h("div",{style:{fontSize:11,fontWeight:700,color:c.accent,letterSpacing:".05em",textTransform:"uppercase",marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+c.accent+"20"}},"CEDENTE"),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}},
+            h(Input,{label:"Nome",value:f.cedente,onChange:v=>up("cedente",v),placeholder:"Raz\u00e3o social",style:{gridColumn:"1/3"}}),
+            h(Input,{label:"CNPJ",value:f.cnpjCedente,onChange:v=>up("cnpjCedente",v),placeholder:"00.000.000/0001-00"}),
+            h(Input,{label:"E-mail",value:f.email,onChange:v=>up("email",v),placeholder:"email@empresa.com"}),
+            h(Input,{label:"Telefone",value:f.tel,onChange:v=>up("tel",v)}),
+            h(Input,{label:"Endere\u00e7o",value:f.endereco,onChange:v=>up("endereco",v),style:{gridColumn:"1/3"}}),
+            h(Input,{label:"Cidade",value:f.cidade,onChange:v=>up("cidade",v)}),
+            h(Input,{label:"UF",value:f.uf,onChange:v=>up("uf",v)})),
+          h("div",{style:{fontSize:11,fontWeight:700,color:c.accent,letterSpacing:".05em",textTransform:"uppercase",marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+c.accent+"20"}},"SACADO"),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
+            h(Input,{label:"Nome",value:f.sacado,onChange:v=>up("sacado",v),placeholder:"Nome do sacado",style:{gridColumn:"1/3"}}),
+            h(Input,{label:"CNPJ",value:f.cnpjSacado,onChange:v=>up("cnpjSacado",v)}))),
+        /* Right: T\u00edtulo + Resumo */
         h("div",null,
-          h("div",{style:{fontSize:11,fontWeight:700,color:c.accent,letterSpacing:".06em",textTransform:"uppercase",marginBottom:10,paddingBottom:6,borderBottom:"1px solid "+c.accent+"20"}},"DADOS DO T\u00cdTULO"),
-          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}},h(Input,{label:"N\u00ba Duplicata",value:f.dupl,onChange:v=>up("dupl",v),placeholder:"00000-0"}),h(Input,{label:"Valor (R$)",value:f.valor,onChange:v=>up("valor",v),prefix:"R$",placeholder:"0,00"}),h(Input,{label:"Vencimento",value:f.vencto,onChange:v=>up("vencto",v),type:"date"}),h(Input,{label:"Chave NF-e (opcional)",value:f.chaveNf,onChange:v=>up("chaveNf",v)}),h(Input,{label:"Abatimento",value:f.abatimento,onChange:v=>up("abatimento",v),prefix:"R$"})),
-          h("div",{style:{fontSize:11,fontWeight:700,color:c.accent,letterSpacing:".06em",textTransform:"uppercase",marginBottom:10,paddingBottom:6,borderBottom:"1px solid "+c.accent+"20"}},"RESUMO FINANCEIRO"),
-          h("div",{style:{background:c.bg,borderRadius:10,padding:14,border:"1px solid "+c.border}},h("div",{style:{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:13}},h("span",null,"Valor Bruto:"),h("span",{className:"mono"},fBRL(vb))),h("div",{style:{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:13,color:c.sec}},h("span",null,"(-) Desconto ("+f.txDesconto+"%):"),h("span",{className:"mono"},fBRL(desc))),h("div",{style:{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:13,color:c.sec}},h("span",null,"(-) Royalty ("+f.royalty+"%):"),h("span",{className:"mono"},fBRL(roy))),h("div",{style:{borderTop:"1px solid "+c.border,marginTop:6,paddingTop:6,display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700}},h("span",null,"Valor L\u00edquido:"),h("span",{className:"mono",style:{color:c.green}},fBRL(vliq))),h("div",{style:{marginTop:8,fontSize:11,color:c.dim}},"Prazo: "+(tipo==="Siderqu\u00edmica"?"D+30 \u00b7 IR Regressivo":"D+3 \u00b7 Ganho de Capital GCAP"))),
-          h("div",{style:{fontSize:10,color:c.dim,marginTop:8,lineHeight:1.5}},"Cess\u00e3o arts. 286-298 CC. Lastro: "+(tipo==="Siderqu\u00edmica"?"CR (Lei 14.430/22)":"Cess\u00e3o direta")+". Conta segregada: Bco 332 \u00b7 Ag 0001.")
-        )
-      ),
-      h("div",{style:{display:"flex",gap:8,marginTop:18,justifyContent:"flex-end",borderTop:"1px solid "+c.border,paddingTop:14}},h(Btn,{onClick:cancel},"Cancelar"),h(Btn,{primary:true,color:c.green,onClick:add,disabled:!f.cedente||!f.valor||!f.sacado||!f.dupl||!f.vencto},"Registrar Cess\u00e3o \u25c8"))
-    ),
-    h(Card,{style:{padding:0,overflow:"hidden"}},h("div",{style:{overflowX:"auto"}},h("table",null,h("thead",null,h("tr",null,["N\u00ba Dupl","Cedente","Sacado","Op","Valor","Vencto","Dias","Status"].map(t=>h("th",{key:t},t)))),h("tbody",null,recebiveis.map(r=>h("tr",{key:r.id},h("td",{className:"mono",style:{color:c.accent,fontWeight:600}},r.dupl),h("td",{style:{fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.cedente),h("td",{style:{fontSize:12,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.sacado),h("td",null,h(Badge,{color:r.op==="Siderqu\u00edmica"?c.green:c.purple},r.op)),h("td",{className:"mono",style:{fontWeight:600}},fBRL(r.valor)),h("td",{className:"mono",style:{fontSize:12}},fDate(r.vencto)),h("td",{className:"mono",style:{fontSize:12,color:diasAte(r.vencto)<0?c.red:diasAte(r.vencto)<=7?c.amber:c.green}},diasAte(r.vencto)+"d"),h("td",null,h(Badge,{color:r.status==="ativo"?c.green:r.status==="liquidado"?c.blue:c.red},r.status))))))))
-  );
+          h("div",{style:{fontSize:11,fontWeight:700,color:c.accent,letterSpacing:".05em",textTransform:"uppercase",marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+c.accent+"20"}},"DADOS DO T\u00cdTULO"),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}},
+            h(Input,{label:"N\u00ba Duplicata",value:f.dupl,onChange:v=>up("dupl",v),placeholder:"00000-0"}),
+            h(Input,{label:"Valor (R$)",value:f.valor,onChange:v=>up("valor",v),prefix:"R$"}),
+            h(Input,{label:"Vencimento",value:f.vencto,onChange:v=>up("vencto",v),type:"date"}),
+            h(Input,{label:"Chave NF-e",value:f.chaveNf,onChange:v=>up("chaveNf",v)}),
+            h(Input,{label:"Abatimento",value:f.abatimento,onChange:v=>up("abatimento",v),prefix:"R$"})),
+          h("div",{style:{fontSize:11,fontWeight:700,color:c.accent,letterSpacing:".05em",textTransform:"uppercase",marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+c.accent+"20"}},"RESUMO FINANCEIRO"),
+          h("div",{style:{background:c.bg,borderRadius:10,padding:12,border:"1px solid "+c.border,fontSize:13}},
+            h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0"}},h("span",null,"Valor Bruto:"),h("span",{className:"mono"},fBRL(vb))),
+            h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",color:c.sec}},h("span",null,"(-) Desconto "+fPct(params.txDesconto)+":"),h("span",{className:"mono"},fBRL(desc))),
+            h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",color:c.sec}},h("span",null,"(-) Royalty "+fPct(params.royalty)+":"),h("span",{className:"mono"},fBRL(roy))),
+            h("div",{style:{borderTop:"1px solid "+c.border,marginTop:4,paddingTop:4,display:"flex",justifyContent:"space-between",fontWeight:700}},h("span",null,"Valor L\u00edquido:"),h("span",{className:"mono",style:{color:c.green}},fBRL(vliq))),
+            h("div",{style:{marginTop:6,fontSize:11,color:c.dim}},"Prazo: D+"+(tipo==="Siderqu\u00edmica"?params.prazoSider:params.prazoMercado)+" \u00b7 "+(tipo==="Siderqu\u00edmica"?"IR Regressivo":"Ganho Capital GCAP"))))),
+      h("div",{style:{display:"flex",gap:8,marginTop:14,justifyContent:"flex-end",borderTop:"1px solid "+c.border,paddingTop:12,flexWrap:"wrap"}},
+        h(Btn,{onClick:cancel},"Cancelar"),
+        h(Btn,{primary:true,color:c.green,onClick:add,disabled:!f.cedente||!f.valor||!f.sacado||!f.dupl||!f.vencto},"Registrar Cess\u00e3o \u25c8"))),
+
+    /* Table */
+    h(Card,{style:{padding:0,overflow:"hidden"}},
+      h("div",{style:{padding:"12px 16px",borderBottom:"1px solid "+c.border,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}},
+        h("h3",{style:{fontSize:13,fontWeight:700}},recebiveis.length+" opera\u00e7\u00f5es"),
+        h(Btn,{small:true,onClick:()=>exportCSV(recebiveis,"efix-operacoes.csv")},"Exportar CSV")),
+      h("div",{style:{overflowX:"auto"}},
+        h("table",null,
+          h("thead",null,h("tr",null,["Dupl","Sacado","Op","Valor","Vencto","Dias","Status","CR"].map(t=>h("th",{key:t},t)))),
+          h("tbody",null,recebiveis.map(r=>h("tr",{key:r.id},
+            h("td",{className:"mono",style:{color:c.accent,fontWeight:600,fontSize:12}},r.dupl),
+            h("td",{style:{fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.sacado),
+            h("td",null,h(Badge,{color:r.op==="Siderqu\u00edmica"?c.green:c.purple},r.op)),
+            h("td",{className:"mono",style:{fontWeight:600,fontSize:12}},fBRL(r.valor)),
+            h("td",{className:"mono",style:{fontSize:11}},fDate(r.vencto)),
+            h("td",{className:"mono",style:{fontSize:11,color:diasAte(r.vencto)<0?c.red:diasAte(r.vencto)<=7?c.amber:c.green}},diasAte(r.vencto)+"d"),
+            h("td",null,h(Badge,{color:r.status==="ativo"?c.green:r.status==="liquidado"?c.blue:c.red},r.status)),
+            h("td",null,r.op==="Siderqu\u00edmica"?h(Btn,{small:true,onClick:()=>gerarCR(r,params)},"\u2193 CR"):h("span",{style:{fontSize:11,color:c.sec}},"\u2014")))))))));
 }
 
+/* ========== RECEB\u00cdVEIS ========== */
 function Recebiveis({recebiveis}){
-  const [filtro,setFiltro]=useState("todos");const [busca,setBusca]=useState("");
-  const filtered=recebiveis.filter(r=>{if(filtro!=="todos"&&r.status!==filtro)return false;if(busca){const b=busca.toLowerCase();return r.cedente.toLowerCase().includes(b)||r.sacado.toLowerCase().includes(b)||r.dupl.toLowerCase().includes(b)}return true});
+  const [filtro,setFiltro]=useState("todos");
+  const [busca,setBusca]=useState("");
+  const filtered=recebiveis.filter(r=>{
+    if(filtro!=="todos"&&r.status!==filtro)return false;
+    if(busca){const b=busca.toLowerCase();return r.cedente.toLowerCase().includes(b)||r.sacado.toLowerCase().includes(b)||r.dupl.toLowerCase().includes(b)}
+    return true;
+  });
   const total=filtered.reduce((s,r)=>s+r.valor,0);
-  return h("div",null,h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}},h("div",null,h("h2",{style:{fontSize:20,fontWeight:700}},"Carteira de Receb\u00edveis"),h("p",{style:{fontSize:13,color:c.dim,marginTop:4}},filtered.length+" t\u00edtulos \u00b7 "+fBRL(total))),h("div",{style:{display:"flex",gap:8,alignItems:"center"}},h("input",{placeholder:"Buscar...",value:busca,onChange:e=>setBusca(e.target.value),style:{width:220,padding:"8px 12px",borderRadius:8,border:"1px solid "+c.border,fontSize:13}}),["todos","ativo","liquidado"].map(f=>h(Btn,{key:f,small:true,primary:filtro===f,onClick:()=>setFiltro(f)},f)))),
-  h(Card,{style:{padding:0,overflow:"hidden"}},h("div",{style:{overflowX:"auto"}},h("table",null,h("thead",null,h("tr",null,["N\u00ba Dupl","Cedente","CNPJ Ced.","Sacado","CNPJ Sac.","Op","Valor","Vencto","Dias","Status"].map(t=>h("th",{key:t},t)))),h("tbody",null,filtered.map(r=>h("tr",{key:r.id},h("td",{className:"mono",style:{color:c.accent,fontWeight:600}},r.dupl),h("td",{style:{fontSize:12,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.cedente),h("td",{className:"mono",style:{fontSize:11,color:c.sec}},r.cnpjCedente),h("td",{style:{fontSize:12,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.sacado),h("td",{className:"mono",style:{fontSize:11,color:c.sec}},r.cnpjSacado),h("td",null,h(Badge,{color:r.op==="Siderqu\u00edmica"?c.green:c.purple},r.op)),h("td",{className:"mono",style:{fontWeight:600}},fBRL(r.valor)),h("td",{className:"mono",style:{fontSize:12}},fDate(r.vencto)),h("td",{className:"mono",style:{fontSize:12,color:diasAte(r.vencto)<0?c.red:diasAte(r.vencto)<=7?c.amber:c.green}},diasAte(r.vencto)+"d"),h("td",null,h(Badge,{color:r.status==="ativo"?c.green:r.status==="liquidado"?c.blue:c.red},r.status)))))))));
+
+  return h("div",null,
+    h("div",{className:"flex-header",style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      h("div",null,h("h2",{style:{fontSize:20,fontWeight:700}},"Carteira de Receb\u00edveis"),h("p",{style:{fontSize:12,color:c.dim,marginTop:2}},filtered.length+" t\u00edtulos \u00b7 "+fBRL(total))),
+      h("div",{style:{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}},
+        h("input",{placeholder:"Buscar...",value:busca,onChange:e=>setBusca(e.target.value),style:{width:180,padding:"6px 10px",borderRadius:8,border:"1px solid "+c.border,fontSize:12}}),
+        ["todos","ativo","liquidado"].map(f=>h(Btn,{key:f,small:true,primary:filtro===f,onClick:()=>setFiltro(f)},f)),
+        h(Btn,{small:true,onClick:()=>exportCSV(filtered,"efix-recebiveis.csv")},"CSV"))),
+    h(Card,{style:{padding:0,overflow:"hidden"}},
+      h("div",{style:{overflowX:"auto"}},
+        h("table",null,
+          h("thead",null,h("tr",null,["Dupl","Cedente","Sacado","Op","Valor","Vencto","Dias","Status"].map(t=>h("th",{key:t},t)))),
+          h("tbody",null,filtered.map(r=>h("tr",{key:r.id},
+            h("td",{className:"mono",style:{color:c.accent,fontWeight:600,fontSize:12}},r.dupl),
+            h("td",{style:{fontSize:12,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.cedente),
+            h("td",{style:{fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.sacado),
+            h("td",null,h(Badge,{color:r.op==="Siderqu\u00edmica"?c.green:c.purple},r.op)),
+            h("td",{className:"mono",style:{fontWeight:600,fontSize:12}},fBRL(r.valor)),
+            h("td",{className:"mono",style:{fontSize:11}},fDate(r.vencto)),
+            h("td",{className:"mono",style:{fontSize:11,color:diasAte(r.vencto)<0?c.red:diasAte(r.vencto)<=7?c.amber:c.green}},diasAte(r.vencto)+"d"),
+            h("td",null,h(Badge,{color:r.status==="ativo"?c.green:r.status==="liquidado"?c.blue:c.red},r.status)))))))));
 }
 
+/* ========== CONCILIA\u00c7\u00c3O ========== */
+function Conciliacao({recebiveis,setRecebiveis}){
+  const [sel,setSel]=useState({});
+  const [valorPago,setValorPago]=useState("");
+  const [dataLiq,setDataLiq]=useState(hoje());
+  const ativos=recebiveis.filter(r=>r.status==="ativo");
+  const toggle=id=>setSel(s=>({...s,[id]:!s[id]}));
+  const selIds=Object.keys(sel).filter(k=>sel[k]);
+  const selTotal=ativos.filter(r=>selIds.includes(r.id)).reduce((s,r)=>s+r.valor,0);
+
+  const liquidar=()=>{
+    if(selIds.length===0)return;
+    setRecebiveis(recebiveis.map(r=>{
+      if(selIds.includes(r.id)){
+        return{...r,status:"liquidado",valorPago:Number(valorPago)||r.valor,dataLiquidacao:dataLiq};
+      }
+      return r;
+    }));
+    setSel({});setValorPago("");
+  };
+
+  const liquidarTudo=()=>{
+    if(!confirm("Liquidar TODOS os "+ativos.length+" t\u00edtulos ativos?"))return;
+    setRecebiveis(recebiveis.map(r=>{
+      if(r.status==="ativo")return{...r,status:"liquidado",valorPago:r.valor,dataLiquidacao:dataLiq};
+      return r;
+    }));
+  };
+
+  return h("div",null,
+    h("div",{className:"flex-header",style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      h("div",null,h("h2",{style:{fontSize:20,fontWeight:700}},"Concilia\u00e7\u00e3o de Pagamentos"),h("p",{style:{fontSize:12,color:c.dim,marginTop:2}},"Selecione t\u00edtulos para marcar como liquidados")),
+      h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+        h(Btn,{small:true,onClick:liquidarTudo,disabled:ativos.length===0},"Liquidar Todos"),
+        h(Btn,{small:true,onClick:()=>exportCSV(recebiveis.filter(r=>r.status==="liquidado"),"efix-liquidados.csv")},"Exportar Liquidados"))),
+
+    selIds.length>0&&h(Card,{style:{marginBottom:12,border:"1px solid "+c.green+"40",background:c.green+"08"}},
+      h("div",{className:"flex-header",style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}},
+        h("div",null,
+          h("span",{style:{fontSize:13,fontWeight:700}},selIds.length+" selecionado"+(selIds.length>1?"s":"")),
+          h("span",{className:"mono",style:{fontSize:13,fontWeight:700,color:c.green,marginLeft:8}},fBRL(selTotal))),
+        h("div",{style:{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}},
+          h(Input,{label:"Valor pago (vazio = face)",value:valorPago,onChange:setValorPago,prefix:"R$",style:{width:180}}),
+          h(Input,{label:"Data",value:dataLiq,onChange:setDataLiq,type:"date",style:{width:150}}),
+          h(Btn,{primary:true,color:c.green,onClick:liquidar},"Liquidar Selecionados")))),
+
+    h(Card,{style:{padding:0,overflow:"hidden"}},
+      h("div",{style:{overflowX:"auto"}},
+        h("table",null,
+          h("thead",null,h("tr",null,["","Dupl","Sacado","Op","Valor Face","Vencto","Dias","Status"].map(t=>h("th",{key:t},t)))),
+          h("tbody",null,ativos.map(r=>h("tr",{key:r.id,style:{background:sel[r.id]?c.green+"08":"transparent"}},
+            h("td",{style:{width:30}},h("input",{type:"checkbox",checked:!!sel[r.id],onChange:()=>toggle(r.id)})),
+            h("td",{className:"mono",style:{color:c.accent,fontWeight:600,fontSize:12}},r.dupl),
+            h("td",{style:{fontSize:12,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},r.sacado),
+            h("td",null,h(Badge,{color:r.op==="Siderqu\u00edmica"?c.green:c.purple},r.op)),
+            h("td",{className:"mono",style:{fontWeight:600,fontSize:12}},fBRL(r.valor)),
+            h("td",{className:"mono",style:{fontSize:11}},fDate(r.vencto)),
+            h("td",{className:"mono",style:{fontSize:11,color:diasAte(r.vencto)<0?c.red:diasAte(r.vencto)<=7?c.amber:c.green}},diasAte(r.vencto)+"d"),
+            h("td",null,h(Badge,{color:c.green},"ativo")))))))),
+
+    recebiveis.filter(r=>r.status==="liquidado").length>0&&h("div",{style:{marginTop:16}},
+      h("h3",{style:{fontSize:14,fontWeight:700,marginBottom:10}},"Liquidados ("+recebiveis.filter(r=>r.status==="liquidado").length+")"),
+      h(Card,{style:{padding:0,overflow:"hidden"}},
+        h("div",{style:{overflowX:"auto"}},
+          h("table",null,
+            h("thead",null,h("tr",null,["Dupl","Sacado","Valor Face","Valor Pago","Data Liq.","CR"].map(t=>h("th",{key:t},t)))),
+            h("tbody",null,recebiveis.filter(r=>r.status==="liquidado").map(r=>h("tr",{key:r.id},
+              h("td",{className:"mono",style:{color:c.blue,fontWeight:600,fontSize:12}},r.dupl),
+              h("td",{style:{fontSize:12}},r.sacado),
+              h("td",{className:"mono",style:{fontSize:12}},fBRL(r.valor)),
+              h("td",{className:"mono",style:{fontSize:12,fontWeight:600,color:c.green}},fBRL(r.valorPago||r.valor)),
+              h("td",{className:"mono",style:{fontSize:11}},fDate(r.dataLiquidacao)),
+              h("td",null,r.op==="Siderqu\u00edmica"?h(Btn,{small:true,onClick:()=>gerarCR(r,defaultParams)},"\u2193"):h("span",{style:{color:c.sec}},"\u2014"))))))))));
+}
+
+/* ========== CADASTROS ========== */
 function Cadastros(){
-  const list=[{id:"USR-001",nome:"C2LOG TRANSPORTES LTDA",tipo:"cedente",doc:"04.876.970/0001-06",email:"contato@c2log.com.br"},{id:"USR-002",nome:"SIDERQUIMICA IND. E COM.",tipo:"sacado",doc:"73.586.976/0001-61",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR"},{id:"USR-003",nome:"ROCHESA TINTAS E VERNIZES",tipo:"sacado",doc:"74.068.552/0001-78",email:"contato@rochesa.com.br"},{id:"USR-004",nome:"Ernesto Otero",tipo:"admin",doc:"ernesto.otero@hausbank.com.br",email:"ernesto.otero@hausbank.com.br"}];
-  return h("div",null,h("h2",{style:{fontSize:20,fontWeight:700,marginBottom:18}},"Cadastro de Participantes"),
-    h("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}},h(Card,{style:{textAlign:"center"}},h("div",{className:"mono",style:{fontSize:28,fontWeight:800,color:c.green}},1),h("div",{style:{fontSize:11,color:c.dim,fontWeight:600}},"CEDENTES")),h(Card,{style:{textAlign:"center"}},h("div",{className:"mono",style:{fontSize:28,fontWeight:800,color:c.purple}},2),h("div",{style:{fontSize:11,color:c.dim,fontWeight:600}},"SACADOS")),h(Card,{style:{textAlign:"center"}},h("div",{className:"mono",style:{fontSize:28,fontWeight:800,color:c.blue}},0),h("div",{style:{fontSize:11,color:c.dim,fontWeight:600}},"INVESTIDORES")),h(Card,{style:{textAlign:"center"}},h("div",{className:"mono",style:{fontSize:28,fontWeight:800,color:c.amber}},1),h("div",{style:{fontSize:11,color:c.dim,fontWeight:600}},"ADMINS"))),
-    h(Card,{style:{padding:0,overflow:"hidden"}},h("table",null,h("thead",null,h("tr",null,["ID","Nome","Tipo","Documento","Email","Status"].map(t=>h("th",{key:t},t)))),h("tbody",null,list.map(u=>h("tr",{key:u.id},h("td",{className:"mono",style:{color:c.accent}},u.id),h("td",{style:{fontWeight:600}},u.nome),h("td",null,h(Badge,{color:u.tipo==="cedente"?c.green:u.tipo==="sacado"?c.purple:c.amber},u.tipo)),h("td",{className:"mono",style:{fontSize:12,color:c.sec}},u.doc),h("td",{style:{fontSize:12}},u.email),h("td",null,h(Badge,{color:c.green},"ativo"))))))));
+  const list=[
+    {id:"USR-001",nome:"C2LOG TRANSPORTES LTDA",tipo:"cedente",doc:"04.876.970/0001-06",email:"contato@c2log.com.br"},
+    {id:"USR-002",nome:"SIDERQUIMICA IND. E COM.",tipo:"sacado",doc:"73.586.976/0001-61",email:"DIOCLEA.BILL@SBCHEMICALS.COM.BR"},
+    {id:"USR-003",nome:"ROCHESA TINTAS E VERNIZES",tipo:"sacado",doc:"74.068.552/0001-78",email:"contato@rochesa.com.br"},
+    {id:"USR-004",nome:"Ernesto Otero",tipo:"admin",doc:"ernesto.otero@hausbank.com.br",email:"ernesto.otero@hausbank.com.br"}
+  ];
+  return h("div",null,
+    h("h2",{style:{fontSize:20,fontWeight:700,marginBottom:16}},"Cadastro de Participantes"),
+    h("div",{className:"grid-4",style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}},
+      h(Card,{style:{textAlign:"center",padding:14}},h("div",{className:"mono",style:{fontSize:24,fontWeight:800,color:c.green}},1),h("div",{style:{fontSize:10,color:c.dim,fontWeight:600}},"CEDENTES")),
+      h(Card,{style:{textAlign:"center",padding:14}},h("div",{className:"mono",style:{fontSize:24,fontWeight:800,color:c.purple}},2),h("div",{style:{fontSize:10,color:c.dim,fontWeight:600}},"SACADOS")),
+      h(Card,{style:{textAlign:"center",padding:14}},h("div",{className:"mono",style:{fontSize:24,fontWeight:800,color:c.blue}},0),h("div",{style:{fontSize:10,color:c.dim,fontWeight:600}},"INVESTIDORES")),
+      h(Card,{style:{textAlign:"center",padding:14}},h("div",{className:"mono",style:{fontSize:24,fontWeight:800,color:c.amber}},1),h("div",{style:{fontSize:10,color:c.dim,fontWeight:600}},"ADMINS"))),
+    h(Card,{style:{padding:0,overflow:"hidden"}},
+      h("div",{style:{overflowX:"auto"}},
+        h("table",null,
+          h("thead",null,h("tr",null,["ID","Nome","Tipo","Documento","Email","Status"].map(t=>h("th",{key:t},t)))),
+          h("tbody",null,list.map(u=>h("tr",{key:u.id},
+            h("td",{className:"mono",style:{color:c.accent,fontSize:12}},u.id),
+            h("td",{style:{fontWeight:600,fontSize:12}},u.nome),
+            h("td",null,h(Badge,{color:u.tipo==="cedente"?c.green:u.tipo==="sacado"?c.purple:c.amber},u.tipo)),
+            h("td",{className:"mono",style:{fontSize:11,color:c.sec}},u.doc),
+            h("td",{style:{fontSize:12}},u.email),
+            h("td",null,h(Badge,{color:c.green},"ativo")))))))));
 }
-function Placeholder({title}){return h(Card,null,h("h2",{style:{fontSize:20,fontWeight:700}},title),h("p",{style:{color:c.dim,marginTop:8}},"Em desenvolvimento"))}
 
+/* ========== PAR\u00c2METROS ========== */
+function Parametros({params,setParams}){
+  const up=(k,v)=>setParams(s=>({...s,[k]:v}));
+  return h("div",null,
+    h("h2",{style:{fontSize:20,fontWeight:700,marginBottom:16}},"Par\u00e2metros da Securitizadora"),
+    h("div",{className:"grid-2",style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}},
+      h(Card,null,
+        h("h3",{style:{fontSize:14,fontWeight:700,marginBottom:14,color:c.accent}},"Taxas e Descontos"),
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+          h(Input,{label:"Taxa de Desconto (%)",value:String(params.txDesconto),onChange:v=>up("txDesconto",Number(v)||0),suffix:"%"}),
+          h(Input,{label:"Royalty (%)",value:String(params.royalty),onChange:v=>up("royalty",Number(v)||0),suffix:"%"}),
+          h(Input,{label:"Prazo Siderqu\u00edmica (dias)",value:String(params.prazoSider),onChange:v=>up("prazoSider",Number(v)||0)}),
+          h(Input,{label:"Prazo Mercado (dias)",value:String(params.prazoMercado),onChange:v=>up("prazoMercado",Number(v)||0)})),
+        h("div",{style:{marginTop:14,padding:12,background:c.bg,borderRadius:8,border:"1px solid "+c.border}},
+          h("div",{style:{fontSize:11,fontWeight:700,color:c.dim,marginBottom:6}},"SIMULA\u00c7\u00c3O (R$ 100.000)"),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:12}},
+            h("div",null,h("div",{style:{color:c.sec}},"Desconto"),h("div",{className:"mono",style:{fontWeight:700}},fBRL(100000*params.txDesconto/100))),
+            h("div",null,h("div",{style:{color:c.sec}},"Royalty"),h("div",{className:"mono",style:{fontWeight:700}},fBRL(100000*params.royalty/100))),
+            h("div",null,h("div",{style:{color:c.sec}},"L\u00edquido cedente"),h("div",{className:"mono",style:{fontWeight:700,color:c.green}},fBRL(100000*(1-params.txDesconto/100-params.royalty/100))))))),
+      h(Card,null,
+        h("h3",{style:{fontSize:14,fontWeight:700,marginBottom:14,color:c.accent}},"Dados da Securitizadora"),
+        h("div",{style:{display:"grid",gap:10}},
+          h(Input,{label:"Nome",value:params.nomeSecuritizadora,onChange:v=>up("nomeSecuritizadora",v)}),
+          h(Input,{label:"CNPJ",value:params.cnpjSecuritizadora,onChange:v=>up("cnpjSecuritizadora",v)}),
+          h(Input,{label:"Conta Banc\u00e1ria",value:params.contaBanco,onChange:v=>up("contaBanco",v)})),
+        h("div",{style:{marginTop:14}},
+          h("h4",{style:{fontSize:12,fontWeight:700,color:c.dim,marginBottom:8}},"IR REGRESSIVO (Siderqu\u00edmica)"),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,fontSize:12}},
+            ["At\u00e9 180d","181-360d","361-720d","+720d"].map((l,i)=>h("div",{key:i,style:{textAlign:"center",padding:8,background:c.bg,borderRadius:6,border:"1px solid "+c.border}},
+              h("div",{style:{fontSize:10,color:c.sec}},l),
+              h("div",{className:"mono",style:{fontWeight:700,color:c.accent}},params.irRegressivo[i]+"%"))))))));
+}
+
+/* ========== APP ========== */
 function App(){
   const [page,setPage]=useState("Dashboard");
   const [recebiveis,setRecebiveis]=useState(initRecebiveis);
-  const content=()=>{switch(page){case "Dashboard":return h(Dashboard,{recebiveis,setPage});case "Opera\u00e7\u00f5es":return h(Operacoes,{recebiveis,setRecebiveis});case "Receb\u00edveis":return h(Recebiveis,{recebiveis});case "Cadastros":return h(Cadastros);default:return h(Placeholder,{title:page})}};
+  const [params,setParams]=useState(defaultParams);
+  const [menuOpen,setMenuOpen]=useState(false);
+
+  const nav=p=>{setPage(p);setMenuOpen(false)};
+
+  const content=()=>{
+    switch(page){
+      case "Dashboard":return h(Dashboard,{recebiveis,params,setPage:nav});
+      case "Opera\u00e7\u00f5es":return h(Operacoes,{recebiveis,setRecebiveis,params});
+      case "Receb\u00edveis":return h(Recebiveis,{recebiveis});
+      case "Concilia\u00e7\u00e3o":return h(Conciliacao,{recebiveis,setRecebiveis});
+      case "Cadastros":return h(Cadastros);
+      case "Par\u00e2metros":return h(Parametros,{params,setParams});
+      default:return h(Card,null,h("h2",{style:{fontSize:20,fontWeight:700}},page),h("p",{style:{color:c.dim}},"Em desenvolvimento"));
+    }
+  };
+
+  const icons={"Dashboard":"\u25c8","Opera\u00e7\u00f5es":"\u25c9","Receb\u00edveis":"\u25a4","Concilia\u00e7\u00e3o":"\u2713","Cadastros":"\u25ce","Par\u00e2metros":"\u2699"};
+
   return h("div",{style:{display:"flex",minHeight:"100vh"}},
-    h("nav",{style:{width:200,background:"#1E1B2E",color:"#fff",padding:"16px 0",flexShrink:0,display:"flex",flexDirection:"column"}},
-      h("div",{style:{padding:"0 16px",marginBottom:24,display:"flex",alignItems:"center",gap:10}},h("img",{src:EFIX_LOGO,style:{width:32,height:32,borderRadius:9}}),h("div",null,h("div",{style:{fontSize:15,fontWeight:800,letterSpacing:".02em"}},"EFIX"),h("div",{style:{fontSize:9,color:"#9CA3AF",letterSpacing:".08em"}},"SECURITIZADORA S.A."))),
-      pages.map(p=>h("div",{key:p,onClick:()=>setPage(p),style:{padding:"10px 16px",cursor:"pointer",fontSize:13,fontWeight:page===p?700:400,color:page===p?"#fff":"#9CA3AF",background:page===p?"#6366F120":"transparent",borderLeft:page===p?"3px solid #6366F1":"3px solid transparent",transition:"all .15s"}},(p==="Dashboard"?"\u25c8 ":p==="Opera\u00e7\u00f5es"?"\u25c9 ":p==="Receb\u00edveis"?"\u25a4 ":p==="Cadastros"?"\u25ce ":p==="Banking"?"\u2b21 ":p==="Par\u00e2metros"?"\u2699 ":"\u25c7 ")+p)),
-      h("div",{style:{marginTop:"auto",padding:"12px 16px",fontSize:10,color:"#6B7280",lineHeight:1.6}},"EFIX Plataforma de Tokeniza\u00e7\u00e3o e Crowdfunding Ltda \u00b7 CVM 88 \u00b7 Ato 23.635/2025")),
-    h("main",{style:{flex:1,padding:24,overflowY:"auto",maxHeight:"100vh"}},content()));
+    /* Mobile overlay */
+    h("div",{className:"sidebar-overlay"+(menuOpen?" open":""),onClick:()=>setMenuOpen(false)}),
+    /* Mobile header */
+    h("div",{className:"mobile-header",style:{display:"none",position:"fixed",top:0,left:0,right:0,height:48,background:"#1E1B2E",zIndex:50,alignItems:"center",padding:"0 12px",gap:10}},
+      h("button",{onClick:()=>setMenuOpen(!menuOpen),style:{background:"none",border:"none",color:"#fff",fontSize:20,cursor:"pointer",padding:4}},"\u2630"),
+      h("img",{src:EFIX_LOGO,style:{width:22,height:22,borderRadius:5}}),
+      h("span",{style:{color:"#fff",fontSize:13,fontWeight:700}},"EFIX"),
+      h("span",{style:{color:"#9CA3AF",fontSize:10,marginLeft:4}},"Securitizadora")),
+    /* Sidebar */
+    h("nav",{className:"sidebar"+(menuOpen?" open":""),style:{width:200,background:"#1E1B2E",color:"#fff",padding:"16px 0",flexShrink:0,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh"}},
+      h("div",{style:{padding:"0 16px",marginBottom:20,display:"flex",alignItems:"center",gap:8}},
+        h("img",{src:EFIX_LOGO,style:{width:28,height:28,borderRadius:7}}),
+        h("div",null,h("div",{style:{fontSize:14,fontWeight:800,letterSpacing:".02em"}},"EFIX"),h("div",{style:{fontSize:8,color:"#9CA3AF",letterSpacing:".08em"}},"SECURITIZADORA S.A."))),
+      pages.map(p=>h("div",{key:p,onClick:()=>nav(p),style:{padding:"9px 16px",cursor:"pointer",fontSize:13,fontWeight:page===p?700:400,color:page===p?"#fff":"#9CA3AF",background:page===p?"#6366F120":"transparent",borderLeft:page===p?"3px solid #6366F1":"3px solid transparent",transition:"all .15s"}},(icons[p]||"\u25c7")+" "+p)),
+      h("div",{style:{marginTop:"auto",padding:"10px 16px",fontSize:9,color:"#4B5563",lineHeight:1.5}},"EFIX Securitizadora S.A.\nCVM 88 \u00b7 Ato 23.635/2025\nCNPJ 60.756.859/0001-57")),
+    /* Main */
+    h("main",{className:"main-content",style:{flex:1,padding:20,overflowY:"auto",maxHeight:"100vh",marginTop:0}},
+      h("div",{style:{paddingTop:0}},content())));
 }
+
 ReactDOM.createRoot(document.getElementById("root")).render(h(App));
 </script></body></html>
